@@ -29,6 +29,11 @@ const CODEX_MUX_ACCOUNT_SCOPED_PLUGIN_METHODS = new Set([
   "read-apps",
   "list-mcp-server-status",
   "login-mcp-server",
+  "app/list",
+  "app/installed",
+  "app/read",
+  "mcpServerStatus/list",
+  "mcpServer/oauth/login",
 ]);
 
 function codexMuxScopePluginRequest(method, params) {
@@ -59,6 +64,13 @@ async function codexMuxRateLimitResets(accountId) {
   );
 }
 
+async function codexMuxPreferAccount(accountId) {
+  return codexMuxRequest(`/accounts/${encodeURIComponent(accountId)}/prefer`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
 async function codexMuxConsumeRateLimitReset(accountId, input) {
   return codexMuxRequest(
     `/accounts/${encodeURIComponent(accountId)}/rate-limit-resets/consume`,
@@ -73,14 +85,20 @@ async function codexMuxConsumeRateLimitReset(accountId, input) {
 }
 
 function CodexMuxUsageModal({
+  accountId,
   onClose,
+  onResetComplete,
 }) {
+  globalThis.__codexMuxInitialResetAccountId = accountId;
   return (0, e7.jsx)(QLs, {
     defaultResetCreditsOpen: true,
     initialAvailableCount: 0,
     isRateLimitReached: false,
-    onClose,
-    onResetComplete: () => {},
+    onClose: () => {
+      delete globalThis.__codexMuxInitialResetAccountId;
+      onClose?.();
+    },
+    onResetComplete: () => onResetComplete?.(),
   });
 }
 
@@ -89,7 +107,9 @@ function CodexMuxUseResetAccountState() {
     (account) => account.connected && account.enabled,
   );
   const [accounts, setAccounts] = kXc.useState(cachedAccounts);
-  const [selectedId, setSelectedId] = kXc.useState("primary");
+  const [selectedId, setSelectedId] = kXc.useState(
+    globalThis.__codexMuxInitialResetAccountId || "primary",
+  );
   const [resetCounts, setResetCounts] = kXc.useState({});
   const [loading, setLoading] = kXc.useState(cachedAccounts.length === 0);
 
@@ -127,6 +147,7 @@ function CodexMuxUseResetAccountState() {
       delete window.__codexMuxResetAccountId;
       delete window.__codexMuxSelectedUsageWindows;
       delete window.__codexMuxResetAccountSelector;
+      delete window.__codexMuxInitialResetAccountId;
     },
     [],
   );
@@ -139,24 +160,20 @@ function CodexMuxUseResetAccountState() {
     ? codexMuxUsageWindows(selected.rateLimits)
     : null;
   window.__codexMuxResetAccountSelector = (0, e7.jsx)(
-    CodexMuxResetAccountSelector,
+    CodexMuxResetAccountTarget,
     {
-      accounts,
       loading,
-      resetCounts,
-      selectedId: activeId,
-      onSelect: setSelectedId,
+      account: selected,
+      resetCount: resetCounts[activeId],
     },
   );
 
 }
 
-function CodexMuxResetAccountSelector({
-  accounts,
+function CodexMuxResetAccountTarget({
+  account,
   loading,
-  onSelect,
-  resetCounts,
-  selectedId,
+  resetCount,
 }) {
   return (0, e7.jsxs)("div", {
     className: "pt-4",
@@ -164,63 +181,48 @@ function CodexMuxResetAccountSelector({
       (0, e7.jsx)("div", {
         className:
           "mb-2 px-1 text-xs font-medium text-token-text-secondary",
-        children: "Subscription",
+        children: "Apply this reset to",
       }),
       (0, e7.jsx)("div", {
         className:
-          "flex flex-wrap gap-2 rounded-2xl border border-token-border p-2",
+          "rounded-2xl border border-token-border p-2",
         children: loading
           ? (0, e7.jsx)("div", {
               className: "px-2 py-2 text-sm text-token-text-secondary",
-              children: "Loading subscriptions…",
+              children: "Loading subscription...",
             })
-          : accounts.map((account) => {
-              const selected = account.id === selectedId;
-              const count = resetCounts[account.id];
-              return (0, e7.jsxs)(
-                "button",
-                {
-                  type: "button",
-                  className: [
-                    "flex min-w-fit items-center gap-2 rounded-xl px-3 py-2 text-left",
-                    "transition-colors hover:bg-token-foreground/5",
-                    selected
-                      ? "bg-token-foreground/10 text-token-text-primary"
-                      : "text-token-text-secondary",
-                  ].join(" "),
-                  "aria-pressed": selected,
-                  onClick: () => onSelect(account.id),
-                  children: [
-                    (0, e7.jsx)(CodexMuxAccountAvatar, {
-                      imageUrl: account.profileImageUrl,
-                      label: account.label,
-                      className: "size-7",
-                    }),
-                    (0, e7.jsxs)("span", {
-                      className: "flex min-w-0 flex-col",
-                      children: [
-                        (0, e7.jsx)("span", {
-                          className: "max-w-40 truncate text-sm font-medium",
-                          children: account.planLabel
-                            ? `${account.label} · ${account.planLabel}`
-                            : account.label,
-                        }),
-                        (0, e7.jsx)("span", {
-                          className: "text-xs text-token-text-tertiary",
-                          children:
-                            count == null
-                              ? "Resets unavailable"
-                              : count === 1
-                                ? "1 reset available"
-                                : `${count} resets available`,
-                        }),
-                      ],
-                    }),
-                  ],
-                },
-                account.id,
-              );
-            }),
+          : account
+            ? (0, e7.jsxs)("div", {
+                className: "flex items-center gap-2 rounded-xl px-3 py-2",
+                children: [
+                  (0, e7.jsx)(CodexMuxAccountAvatar, {
+                    imageUrl: account.profileImageUrl,
+                    label: account.label,
+                    className: "size-7",
+                  }),
+                  (0, e7.jsxs)("span", {
+                    className: "flex min-w-0 flex-col",
+                    children: [
+                      (0, e7.jsx)("span", {
+                        className: "max-w-52 truncate text-sm font-medium",
+                        children: account.planLabel
+                          ? `${account.label} - ${account.planLabel}`
+                          : account.label,
+                      }),
+                      (0, e7.jsx)("span", {
+                        className: "text-xs text-token-text-tertiary",
+                        children:
+                          resetCount == null
+                            ? "Reset status unavailable"
+                            : resetCount === 1
+                              ? "1 reset available for this subscription"
+                              : `${resetCount} resets available for this subscription`,
+                      }),
+                    ],
+                  }),
+                ],
+              })
+            : null,
       }),
     ],
   });
@@ -229,14 +231,16 @@ function CodexMuxResetAccountSelector({
 function CodexMuxAccountMenu() {
   const modalScope = Lo(Q);
   const [accounts, setAccounts] = kXc.useState([]);
+  const [resetCounts, setResetCounts] = kXc.useState({});
   const [loading, setLoading] = kXc.useState(true);
   const [busy, setBusy] = kXc.useState(false);
   const [error, setError] = kXc.useState("");
   const [login, setLogin] = kXc.useState(null);
   const [codeCopied, setCodeCopied] = kXc.useState(false);
+  const resetCountsLoadedAt = kXc.useRef(0);
   const loginAccountId = login?.accountId || null;
 
-  const refresh = kXc.useCallback(async () => {
+  const refresh = kXc.useCallback(async (forceResetCounts = false) => {
     try {
       const result = await codexMuxRequest("/accounts");
       const nextAccounts = result.accounts || [];
@@ -244,6 +248,22 @@ function CodexMuxAccountMenu() {
         (account) => account.connected && account.enabled,
       );
       setAccounts(nextAccounts);
+      const resetCountsAreStale =
+        Date.now() - resetCountsLoadedAt.current >= 5 * 60 * 1_000;
+      if (forceResetCounts || resetCountsAreStale) {
+        const resetEntries = await Promise.all(
+          globalThis.__codexMuxConnectedAccounts.map(async (account) => {
+            try {
+              const resets = await codexMuxRateLimitResets(account.id);
+              return [account.id, Math.max(0, resets.applicable_available_count ?? resets.available_count ?? 0)];
+            } catch {
+              return [account.id, null];
+            }
+          }),
+        );
+        setResetCounts(Object.fromEntries(resetEntries));
+        resetCountsLoadedAt.current = Date.now();
+      }
       setError("");
       if (nextAccounts.some((account) => account.connected)) setLoading(false);
     } catch (requestError) {
@@ -336,6 +356,29 @@ function CodexMuxAccountMenu() {
     }
   }
 
+  async function preferSubscription(event, accountId) {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await codexMuxPreferAccount(accountId);
+      await refresh();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openAccountReset(event, accountId) {
+    event.preventDefault();
+    BW(modalScope, CodexMuxUsageModal, {
+      accountId,
+      onResetComplete: () => refresh(true),
+    });
+  }
+
   async function copyCodeAndContinue(event) {
     event.preventDefault();
     const userCode = login?.userCode || "";
@@ -372,19 +415,18 @@ function CodexMuxAccountMenu() {
       {
         LeftIcon: S2,
         SubText: loading
-          ? "Connecting subscriptions…"
+          ? "Connecting subscriptions..."
           : connected.length === 1
             ? "1 connected subscription"
             : `${connected.length} connected subscriptions`,
         rightIcon: (0, e7.jsx)("span", {
           className: "text-token-description-foreground tabular-nums",
           children: loading
-            ? "…"
+            ? "..."
             : hasCompleteUsage
               ? `${Math.round(totalRemaining)}%`
-              : "–",
+              : "-",
         }),
-        onSelect: () => BW(modalScope, CodexMuxUsageModal, {}),
         children: "Usage remaining",
       },
       "codex-mux-total",
@@ -413,15 +455,52 @@ function CodexMuxAccountMenu() {
             ? (0, e7.jsx)(CodexMuxMaskedEmail, { email: account.email })
             : account.planType || "ChatGPT subscription",
           className: "group",
+          onSelect: account.preferred
+            ? undefined
+            : (event) => preferSubscription(event, account.id),
           rightIcon: (0, e7.jsx)("span", {
             className: "text-token-description-foreground tabular-nums",
-            children: remaining == null ? "–" : `${Math.round(remaining)}%`,
+            children: remaining == null ? "-" : `${Math.round(remaining)}%`,
           }),
           children: account.planLabel
-            ? `${account.label} · ${account.planLabel}`
-            : account.label,
+            ? `${account.label} - ${account.planLabel} - ${account.preferred ? "Preferred" : "Use now"}`
+            : `${account.label} - ${account.preferred ? "Preferred" : "Use now"}`,
         },
         `codex-mux-account-${account.id}`,
+      ),
+    );
+    const resetCount = resetCounts[account.id];
+    rows.push(
+      (0, e7.jsx)(
+        _H,
+        {
+          LeftIcon: (iconProps) =>
+            (0, e7.jsx)(CodexMuxResetCreditIcon, {
+              ...iconProps,
+              available: resetCount > 0,
+            }),
+          SubText: account.planLabel
+            ? `Applies only to ${account.label} - ${account.planLabel}`
+            : `Applies only to ${account.label}`,
+          onSelect:
+            resetCount > 0
+              ? (event) => openAccountReset(event, account.id)
+              : undefined,
+          rightIcon:
+            resetCount > 0
+              ? (0, e7.jsx)("span", {
+                  className: "text-chart-green font-medium",
+                  children: "Apply",
+                })
+              : null,
+          children:
+            resetCount == null
+              ? "Reset status unavailable"
+              : resetCount === 1
+                ? "1 reset available"
+                : `${resetCount} resets available`,
+        },
+        `codex-mux-reset-${account.id}`,
       ),
     );
   }
@@ -435,7 +514,7 @@ function CodexMuxAccountMenu() {
           SubText: login.userCode
             ? codeCopied
               ? `Code ${login.userCode} copied`
-              : `Code ${login.userCode} · Click to copy`
+              : `Code ${login.userCode} - Click to copy`
             : "Finish signing in with ChatGPT",
           onSelect: copyCodeAndContinue,
           children: "Continue sign-in",
@@ -469,7 +548,7 @@ function CodexMuxAccountMenu() {
         {
           LeftIcon: CodexMuxPlusIcon,
           onSelect: addSubscription,
-          children: busy ? "Adding subscription…" : "Add another subscription",
+          children: busy ? "Adding subscription..." : "Add another subscription",
         },
         "codex-mux-add",
       ),
@@ -542,12 +621,45 @@ function CodexMuxCopyIcon(props) {
   });
 }
 
+function CodexMuxResetCreditIcon({ available, className, ...props }) {
+  return (0, e7.jsxs)("svg", {
+    viewBox: "0 0 20 20",
+    fill: "none",
+    className: `${className || "icon-sm"} ${available ? "text-chart-green" : "text-warning"}`,
+    "aria-hidden": true,
+    ...props,
+    children: [
+      (0, e7.jsx)("rect", {
+        x: 1,
+        y: 1,
+        width: 18,
+        height: 18,
+        rx: 5,
+        fill: "currentColor",
+        fillOpacity: 0.16,
+      }),
+      (0, e7.jsx)("path", {
+        d: "M5.25 6.25h9.5v2a1.75 1.75 0 0 0 0 3.5v2h-9.5v-2a1.75 1.75 0 0 0 0-3.5v-2Z",
+        stroke: "currentColor",
+        strokeWidth: 1.35,
+        strokeLinejoin: "round",
+      }),
+      (0, e7.jsx)("path", {
+        d: "M10 7.35v1.1m0 1.1v1.1m0 1.1v.9",
+        stroke: "currentColor",
+        strokeWidth: 1.2,
+        strokeLinecap: "round",
+      }),
+    ],
+  });
+}
+
 function CodexMuxMaskedEmail({ email }) {
   return (0, e7.jsxs)(e7.Fragment, {
     children: [
       (0, e7.jsx)("span", {
         className: "group-hover:hidden",
-        children: "••••••••",
+        children: "********",
       }),
       (0, e7.jsx)("span", {
         className: "hidden group-hover:inline",
@@ -592,7 +704,7 @@ function CodexMuxOverlappingAvatars({ accounts, size = "size-20" }) {
         {
           className: `${index === 0 ? "" : overlapClass} rounded-full border-4 border-token-bg-primary`,
           title: account.planLabel
-            ? `${account.label} · ${account.planLabel}`
+            ? `${account.label} - ${account.planLabel}`
             : account.label,
           children: (0, e7.jsx)(CodexMuxAccountAvatar, {
             imageUrl: account.profileImageUrl,
@@ -662,7 +774,7 @@ function CodexMuxProfileAvatarStack({ onSelect }) {
               ? `Show combined profile stats`
               : `Show ${account.label} profile stats`,
             title: account.planLabel
-              ? `${account.label} · ${account.planLabel}`
+              ? `${account.label} - ${account.planLabel}`
               : account.label,
             onClick: () => {
               const nextId = selectedId === account.id ? null : account.id;
@@ -752,7 +864,7 @@ function CodexMuxPluginScope() {
       loading
         ? (0, e7.jsx)("div", {
             className: "mt-3 px-1 text-sm text-token-text-tertiary",
-            children: "Loading subscriptions…",
+            children: "Loading subscriptions...",
           })
         : (0, e7.jsx)("div", {
             className: "mt-3 flex flex-wrap gap-2",
@@ -778,7 +890,7 @@ function CodexMuxPluginScope() {
                     }),
                     (0, e7.jsx)("span", {
                       children: account.planLabel
-                        ? `${account.label} · ${account.planLabel}`
+                        ? `${account.label} - ${account.planLabel}`
                         : account.label,
                     }),
                   ],

@@ -1,6 +1,7 @@
 package state
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -10,6 +11,8 @@ import (
 
 const isolatedCredentialConfig = `cli_auth_credentials_store = "file"
 mcp_oauth_credentials_store = "file"`
+
+const computerUseAppName = "Codex Computer Use.app"
 
 // syncIsolatedConfig shares desktop-managed settings and MCP servers with an
 // isolated subscription while keeping its credentials and project trust local.
@@ -35,9 +38,10 @@ func syncIsolatedConfig(primaryCodexHome, isolatedCodexHome string) error {
 	}
 
 	managed := filterConfig(primaryConfig, func(section string) bool {
-		return !isProjectSection(section)
+		return !isProjectSection(section) && !isDesktopRuntimeSection(section)
 	})
 	managed = removeTopLevelCredentialSettings(managed)
+	managed = removeLegacyRouterNotify(managed)
 	projects := filterConfig(isolatedConfig, isProjectSection)
 
 	parts := []string{isolatedCredentialConfig}
@@ -57,6 +61,78 @@ func syncIsolatedConfig(primaryCodexHome, isolatedCodexHome string) error {
 	}
 	if err := os.Rename(temporaryPath, configPath); err != nil {
 		return fmt.Errorf("commit config: %w", err)
+	}
+	if err := syncSharedComputerUseClient(primaryCodexHome, isolatedCodexHome); err != nil {
+		return err
+	}
+	return nil
+}
+
+// syncSharedComputerUseClient makes the desktop-managed Computer Use binaries
+// available to an isolated CODEX_HOME while leaving config and session data
+// inside that account's own computer-use directory.
+func syncSharedComputerUseClient(primaryCodexHome, isolatedCodexHome string) error {
+	computerUseApp := strings.TrimSpace(os.Getenv("SKY_CUA_SERVICE_PATH"))
+	managedByDesktop := computerUseApp != ""
+	if !managedByDesktop {
+		computerUseApp = filepath.Join(
+			primaryCodexHome,
+			"computer-use",
+			computerUseAppName,
+		)
+	}
+	computerUseInfo, err := os.Stat(computerUseApp)
+	if errors.Is(err, os.ErrNotExist) {
+		if managedByDesktop {
+			return fmt.Errorf(
+				"desktop-managed Computer Use app is missing: %s",
+				computerUseApp,
+			)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect desktop-managed Computer Use app: %w", err)
+	}
+	if !computerUseInfo.IsDir() {
+		return fmt.Errorf(
+			"desktop-managed Computer Use app is not a directory: %s",
+			computerUseApp,
+		)
+	}
+
+	isolatedRoot := filepath.Join(isolatedCodexHome, "computer-use")
+	if err := os.MkdirAll(isolatedRoot, 0o700); err != nil {
+		return fmt.Errorf("create isolated Computer Use state: %w", err)
+	}
+	if err := os.Chmod(isolatedRoot, 0o700); err != nil {
+		return fmt.Errorf("secure isolated Computer Use state: %w", err)
+	}
+
+	sharedApp := filepath.Join(isolatedRoot, computerUseAppName)
+	info, err := os.Lstat(sharedApp)
+	if err == nil {
+		if info.Mode()&os.ModeSymlink == 0 {
+			return fmt.Errorf(
+				"isolated Computer Use app exists and is not a managed symlink: %s",
+				sharedApp,
+			)
+		}
+		target, readErr := os.Readlink(sharedApp)
+		if readErr != nil {
+			return fmt.Errorf("read isolated Computer Use app link: %w", readErr)
+		}
+		if samePath(target, computerUseApp) {
+			return nil
+		}
+		if removeErr := os.Remove(sharedApp); removeErr != nil {
+			return fmt.Errorf("replace isolated Computer Use app link: %w", removeErr)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect isolated Computer Use app link: %w", err)
+	}
+	if err := os.Symlink(computerUseApp, sharedApp); err != nil {
+		return fmt.Errorf("share Computer Use app with isolated account: %w", err)
 	}
 	return nil
 }
@@ -103,8 +179,48 @@ func removeTopLevelCredentialSettings(contents string) string {
 	return builder.String()
 }
 
+func removeLegacyRouterNotify(contents string) string {
+	var builder strings.Builder
+	section := ""
+	for _, line := range strings.Split(contents, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			section = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(trimmed, "["), "]"))
+		}
+		if section == "" && isLegacyRouterNotify(trimmed) {
+			continue
+		}
+		builder.WriteString(line)
+		builder.WriteByte('\n')
+	}
+	return builder.String()
+}
+
+func isLegacyRouterNotify(line string) bool {
+	if !strings.HasPrefix(line, "notify") {
+		return false
+	}
+	equals := strings.IndexByte(line, '=')
+	if equals < 0 {
+		return false
+	}
+	var command []string
+	if err := json.Unmarshal([]byte(strings.TrimSpace(line[equals+1:])), &command); err != nil {
+		return false
+	}
+	return len(command) > 0 && strings.Contains(
+		command[0],
+		"Codex Subscription Router Computer Use.app",
+	)
+}
+
 func isProjectSection(section string) bool {
 	return section == "projects" || strings.HasPrefix(section, "projects.")
+}
+
+func isDesktopRuntimeSection(section string) bool {
+	return section == "mcp_servers.node_repl" ||
+		strings.HasPrefix(section, "mcp_servers.node_repl.")
 }
 
 func samePath(left, right string) bool {

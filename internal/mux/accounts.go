@@ -38,6 +38,7 @@ type AccountSnapshot struct {
 	Label           string          `json:"label"`
 	Enabled         bool            `json:"enabled"`
 	Controller      bool            `json:"controller"`
+	Preferred       bool            `json:"preferred"`
 	Connected       bool            `json:"connected"`
 	Email           string          `json:"email,omitempty"`
 	PlanType        string          `json:"planType,omitempty"`
@@ -49,6 +50,16 @@ type AccountSnapshot struct {
 	Error           string          `json:"error,omitempty"`
 	CreatedAt       int64           `json:"createdAt"`
 	RawAccount      json.RawMessage `json:"-"`
+}
+
+type routeCandidate struct {
+	account      state.Account
+	reason       RouteReason
+	weekly       *RateLimitWindow
+	weeklyUsed   float64
+	shortUsed    float64
+	resetCredits resetCreditMetadata
+	urgency      float64
 }
 
 type RouteReason struct {
@@ -116,6 +127,14 @@ func (m *Multiplexer) UpdateAccount(ctx context.Context, id string, label *strin
 	return m.accountSnapshot(ctx, id)
 }
 
+func (m *Multiplexer) PreferAccount(id string) error {
+	if _, err := m.store.SetPreferredAccount(id); err != nil {
+		return err
+	}
+	m.publish(Event{Type: "account-updated", AccountID: id, Message: "Preferred subscription changed"})
+	return nil
+}
+
 func (m *Multiplexer) ThreadAccount(ctx context.Context, threadID string) (AccountSnapshot, error) {
 	accountID, ok := m.store.ThreadOwner(threadID)
 	if !ok {
@@ -179,6 +198,9 @@ func (m *Multiplexer) accountSnapshotWithProfile(ctx context.Context, accountID 
 		CreatedAt: account.CreatedAt, RawAccount: accountResult.Account,
 		ThreadCount: m.store.ThreadCounts()[account.ID],
 	}
+	if preferred, ok := m.store.PreferredAccount(); ok {
+		snapshot.Preferred = preferred.ID == account.ID
+	}
 	if snapshot.Connected {
 		var details struct {
 			Type     string `json:"type"`
@@ -240,16 +262,7 @@ func (m *Multiplexer) chooseAccount(ctx context.Context) (state.Account, RouteRe
 
 func (m *Multiplexer) chooseAccountExcluding(ctx context.Context, excluded map[string]struct{}) (state.Account, RouteReason, error) {
 	snapshots := m.accountSnapshots(ctx, false)
-	type candidate struct {
-		account      state.Account
-		reason       RouteReason
-		weekly       *RateLimitWindow
-		weeklyUsed   float64
-		shortUsed    float64
-		resetCredits resetCreditMetadata
-		urgency      float64
-	}
-	candidates := make([]candidate, 0, len(snapshots))
+	candidates := make([]routeCandidate, 0, len(snapshots))
 	for _, snapshot := range snapshots {
 		if _, skip := excluded[snapshot.ID]; skip {
 			continue
@@ -280,7 +293,7 @@ func (m *Multiplexer) chooseAccountExcluding(ctx context.Context, excluded map[s
 			shortUsed = short.UsedPercent
 			reason.ShortUsedPercent = &short.UsedPercent
 		}
-		candidates = append(candidates, candidate{
+		candidates = append(candidates, routeCandidate{
 			account: account, reason: reason, weekly: weekly,
 			weeklyUsed: weeklyUsed, shortUsed: shortUsed,
 		})
@@ -344,7 +357,21 @@ collectResetCredits:
 		}
 		return left.account.CreatedAt < right.account.CreatedAt
 	})
-	return candidates[0].account, candidates[0].reason, nil
+	preferredID := ""
+	if preferred, ok := m.store.PreferredAccount(); ok {
+		preferredID = preferred.ID
+	}
+	selected := selectRouteCandidate(candidates, preferredID)
+	return selected.account, selected.reason, nil
+}
+
+func selectRouteCandidate(candidates []routeCandidate, preferredID string) routeCandidate {
+	for _, candidate := range candidates {
+		if candidate.account.ID == preferredID {
+			return candidate
+		}
+	}
+	return candidates[0]
 }
 
 func routeUrgencyScore(now time.Time, weekly *RateLimitWindow, credits resetCreditMetadata) float64 {

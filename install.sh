@@ -2,11 +2,18 @@
 
 set -euo pipefail
 
-readonly REPOSITORY_URL="https://github.com/b-nnett/codex-subscription-router.git"
+readonly HOMEBREW_NODE_22="/opt/homebrew/opt/node@22/bin"
+if [ -x "${HOMEBREW_NODE_22}/node" ]; then
+    PATH="${HOMEBREW_NODE_22}:${PATH}"
+    export PATH
+fi
+
+readonly REPOSITORY_URL="https://github.com/tony-ng-vn/codex-subscription-router.git"
 readonly DEFAULT_SOURCE_DIR="${HOME}/.codex-subscription-router/source"
 readonly SOURCE_DIR="${CODEX_SUBSCRIPTION_ROUTER_SOURCE_DIR:-${DEFAULT_SOURCE_DIR}}"
 readonly DESTINATION_APP="${HOME}/Applications/Codex Subscription Router.app"
 readonly DESTINATION_HELPER="${HOME}/Applications/Codex Subscription Router Computer Use.app"
+readonly MANAGED_DESTINATION_APP="/Applications/ChatGPT.app"
 
 log() {
     printf '\n==> %s\n' "$1" >&2
@@ -78,6 +85,7 @@ resolve_source_dir() {
             fail "${SOURCE_DIR} is not on main; switch branches or set CODEX_SUBSCRIPTION_ROUTER_SOURCE_DIR."
         fi
         log "Updating source"
+        git -C "${SOURCE_DIR}" remote set-url origin "${REPOSITORY_URL}"
         git -C "${SOURCE_DIR}" pull --ff-only origin main >&2
     elif [ -e "${SOURCE_DIR}" ]; then
         fail "${SOURCE_DIR} exists but is not a Git repository."
@@ -114,7 +122,28 @@ stop_bundle_processes() {
     fail "could not stop processes belonging to ${bundle_path}."
 }
 
+usage() {
+    printf '%s\n' "Usage: install.sh [--independent|--managed-primary]"
+    printf '%s\n' "  --independent      Install a separate router app. This is the default."
+    printf '%s\n' "  --managed-primary  Replace ChatGPT with a signed, recoverable router build."
+}
+
 main() {
+    local install_mode="independent"
+    if [ "${1:-}" = "--managed-primary" ]; then
+        install_mode="managed-primary"
+        shift
+    elif [ "${1:-}" = "--independent" ]; then
+        shift
+    elif [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+        usage
+        return
+    fi
+    if [ "$#" -ne 0 ]; then
+        usage >&2
+        fail "unknown installer argument."
+    fi
+
     log "Checking this Mac"
     require_prerequisites
 
@@ -125,16 +154,51 @@ main() {
     log "Installing locked build tools"
     npm ci --ignore-scripts --no-audit --no-fund
 
-    local patch_arguments=()
+    if [ "${install_mode}" = "managed-primary" ]; then
+        if grep -aq "CodexMuxAccountMenu" \
+            "${MANAGED_DESTINATION_APP}/Contents/Resources/app.asar"; then
+            fail "managed ChatGPT is already patched; install a fresh official ChatGPT update before rebuilding it."
+        fi
+        log "Stopping ChatGPT"
+        stop_bundle_processes "${MANAGED_DESTINATION_APP}"
+
+        local managed_source_dir
+        managed_source_dir="$(mktemp -d /tmp/codex-subscription-router-source.XXXXXX)"
+        case "${managed_source_dir}" in
+            /tmp/codex-subscription-router-source.*) ;;
+            *) fail "could not create a safe temporary source directory." ;;
+        esac
+        local managed_source_app="${managed_source_dir}/ChatGPT.app"
+        ditto "${MANAGED_DESTINATION_APP}" "${managed_source_app}"
+
+        log "Building and signing managed ChatGPT"
+        python3 scripts/patch_app.py \
+            --source "${managed_source_app}" \
+            --destination "${MANAGED_DESTINATION_APP}" \
+            --managed-primary \
+            --force
+
+        rm -rf -- "${managed_source_dir}"
+        log "Launching ChatGPT"
+        open "${MANAGED_DESTINATION_APP}"
+        printf '\nInstalled successfully: %s\n' "${MANAGED_DESTINATION_APP}"
+        return
+    fi
+
+    local force_argument=""
     if [ -d "${DESTINATION_APP}" ] || [ -d "${DESTINATION_HELPER}" ]; then
         log "Stopping the existing installation"
         stop_bundle_processes "${DESTINATION_APP}"
         stop_bundle_processes "${DESTINATION_HELPER}"
-        patch_arguments+=("--force")
+        force_argument="--force"
     fi
 
     log "Building and signing Codex Subscription Router"
-    python3 scripts/patch_app.py "${patch_arguments[@]}"
+    if [ -n "${force_argument}" ]; then
+        python3 scripts/patch_app.py "${force_argument}"
+    else
+        python3 scripts/patch_app.py
+    fi
 
     log "Launching Codex Subscription Router"
     open "${DESTINATION_APP}"

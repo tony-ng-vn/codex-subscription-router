@@ -1352,9 +1352,9 @@ def patch_renderer(extracted: Path, token: str) -> None:
         )
 
     depleted_alert_anchors = (
-        "defaultMessage:`You’re out of Codex and Work usage`",
-        "defaultMessage:`You’ve used all Codex and Work usage`",
-        "defaultMessage:`You’ve reached your usage limit`",
+        "defaultMessage:`You\u2019re out of Codex and Work usage`",
+        "defaultMessage:`You\u2019ve used all Codex and Work usage`",
+        "defaultMessage:`You\u2019ve reached your usage limit`",
     )
     for depleted_anchor in depleted_alert_anchors:
         if bundle.count(depleted_anchor) != 1:
@@ -1808,9 +1808,9 @@ def patch_app(
         extracted = temporary_path / "asar"
         proxy = temporary_path / "codex-mux"
 
-        print("Building multiplexer…")
+        print("Building multiplexer...")
         build_proxy(proxy)
-        print("Copying ChatGPT.app…")
+        print("Copying ChatGPT.app...")
         run(["ditto", str(source), str(staged_app)])
         # Code signing rejects Finder metadata and resource forks copied from
         # the official bundle. Strip them only from the independent staging copy.
@@ -1820,7 +1820,7 @@ def patch_app(
 
         resources = staged_app / "Contents" / "Resources"
         original_asar = resources / "app.asar"
-        print("Patching desktop profile and renderer…")
+        print("Patching desktop profile and renderer...")
         run([str(asar), "extract", str(original_asar), str(extracted)])
         patch_asar_computer_use_identity(
             extracted,
@@ -1882,7 +1882,7 @@ def patch_app(
         build_description = (
             "managed primary app" if managed_primary else "independent app copy"
         )
-        print(f"Signing {build_description} with {signing_identity}…")
+        print(f"Signing {build_description} with {signing_identity}...")
         sign_independent_app(
             staged_app,
             signing_identity,

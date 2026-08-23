@@ -140,13 +140,56 @@ class PatchAppCompatibilityTests(unittest.TestCase):
 
         self.assertIn("t=codexMuxScopePluginRequest(e,t);return", patched)
 
-    def test_adapts_account_menu_symbols_for_chatgpt_build_6892(self) -> None:
+    def test_detects_current_renderer_layout_without_using_build_number(self) -> None:
+        bundle = "function eSa(){let e=(0,jV.c)(1)"
+
+        self.assertEqual(
+            patch_app.detect_renderer_profile(bundle, direct_rpc_renderer=True),
+            "current",
+        )
+
+    def test_detects_latest_renderer_layout_without_using_build_number(self) -> None:
+        bundle = "function TCa(){let e=(0,MV.c)(1)"
+
+        self.assertEqual(
+            patch_app.detect_renderer_profile(bundle, direct_rpc_renderer=True),
+            "latest",
+        )
+
+    def test_rejects_an_unknown_renderer_layout(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "supported renderer layout"):
+            patch_app.detect_renderer_profile(
+                "function changedByUpstream(){}",
+                direct_rpc_renderer=True,
+            )
+
+    def test_accepts_supported_anchor_counts_for_unrecorded_source(self) -> None:
+        self.assertEqual(
+            patch_app.validate_replacement_count(
+                "Computer Use identity",
+                99,
+                expected=None,
+                supported={49, 99},
+            ),
+            99,
+        )
+
+    def test_rejects_new_anchor_counts_for_unrecorded_source(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "unsupported Computer Use identity"):
+            patch_app.validate_replacement_count(
+                "Computer Use identity",
+                100,
+                expected=None,
+                supported={49, 99},
+            )
+
+    def test_adapts_account_menu_symbols_for_current_layout(self) -> None:
         component = "e7 QLs kXc Lo BW _H S2 CH jLa lt"
 
         adapted = patch_app.adapt_account_menu_component(
             component,
             direct_rpc_renderer=True,
-            source_build="6892",
+            renderer_profile="current",
         )
 
         self.assertEqual(
@@ -154,13 +197,13 @@ class PatchAppCompatibilityTests(unittest.TestCase):
             "d7 qFc OKl vs UR lI GGl hI _Aa ct",
         )
 
-    def test_adapts_account_menu_symbols_for_chatgpt_build_6962(self) -> None:
+    def test_adapts_account_menu_symbols_for_latest_layout(self) -> None:
         component = "e7 QLs kXc Lo BW _H S2 CH jLa lt"
 
         adapted = patch_app.adapt_account_menu_component(
             component,
             direct_rpc_renderer=True,
-            source_build="6962",
+            renderer_profile="latest",
         )
 
         self.assertEqual(

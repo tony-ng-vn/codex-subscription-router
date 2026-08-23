@@ -85,6 +85,15 @@ test("formats valid dates and adds relative urgency only when useful", () => {
     { ...timing("2026-08-28T12:00:00-07:00", now) },
     { dateLabel: "Aug 28", relativeLabel: "in 5 days", urgent: false },
   );
+  assert.deepEqual(
+    {
+      ...timing(
+        Date.parse("2026-09-01T12:00:00-07:00") / 1_000,
+        now,
+      ),
+    },
+    { dateLabel: "Sep 1", relativeLabel: null, urgent: false },
+  );
   assert.equal(timing(null, now), null);
   assert.equal(timing("not-a-date", now), null);
 });

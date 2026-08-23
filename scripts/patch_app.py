@@ -340,6 +340,26 @@ def existing_signing_team(path: Path) -> str | None:
     return team
 
 
+def require_signing_team_continuity(
+    installed_team: str | None,
+    selected_team: str | None,
+    *,
+    managed_primary: bool,
+    allow_change: bool,
+) -> None:
+    if installed_team == selected_team or allow_change:
+        return
+    if managed_primary and installed_team in {
+        OPENAI_INTERNAL_TEAM_IDENTIFIER,
+        OPENAI_DISTRIBUTION_TEAM_IDENTIFIER,
+    }:
+        return
+    raise RuntimeError(
+        "the selected signing team differs from the installed build; reuse the "
+        "prior identity or pass --allow-signing-team-change"
+    )
+
+
 def ensure_components_are_stopped(paths: tuple[Path, ...]) -> None:
     for path in paths:
         if not path.exists():
@@ -1783,11 +1803,12 @@ def patch_app(
     team_identifier = signing_team_identifier(signing_identity)
     if destination.exists():
         installed_team = existing_signing_team(destination)
-        if installed_team != team_identifier and not allow_signing_team_change:
-            raise RuntimeError(
-                "the selected signing team differs from the installed build; "
-                "reuse the prior identity or pass --allow-signing-team-change"
-            )
+        require_signing_team_continuity(
+            installed_team,
+            team_identifier,
+            managed_primary=managed_primary,
+            allow_change=allow_signing_team_change,
+        )
     destination.parent.mkdir(parents=True, exist_ok=True)
     installed_computer_use_app = (
         computer_use_package(DEFAULT_SOURCE) / "Codex Computer Use.app"

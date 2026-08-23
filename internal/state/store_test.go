@@ -52,11 +52,11 @@ func TestAccountConfigInheritsManagedMCPAndPreservesLocalProjects(t *testing.T) 
 	}
 	primaryConfig := `model = "gpt-test"
 
-[mcp_servers.node_repl]
-command = "/Applications/Codex Subscription Router.app/node_repl"
+[mcp_servers.shared]
+command = "/Applications/Shared MCP/bin/server"
 
-[mcp_servers.node_repl.env]
-SKY_CUA_SERVICE_PATH = "/Applications/Codex Subscription Router Computer Use.app"
+[mcp_servers.shared.env]
+SHARED_SETTING = "enabled"
 
 [projects."/primary-only"]
 trust_level = "trusted"
@@ -84,8 +84,8 @@ trust_level = "trusted"
 		`cli_auth_credentials_store = "file"`,
 		`mcp_oauth_credentials_store = "file"`,
 		`model = "gpt-test"`,
-		`[mcp_servers.node_repl]`,
-		`SKY_CUA_SERVICE_PATH = "/Applications/Codex Subscription Router Computer Use.app"`,
+		`[mcp_servers.shared]`,
+		`SHARED_SETTING = "enabled"`,
 	} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("account config is missing %q:\n%s", expected, text)
@@ -156,6 +156,98 @@ func TestSyncManagedConfigPropagatesPluginsWithoutRestart(t *testing.T) {
 	}
 }
 
+func TestAccountConfigDropsDesktopRuntimeSettings(t *testing.T) {
+	root := t.TempDir()
+	primaryHome := filepath.Join(root, "primary")
+	if err := os.MkdirAll(primaryHome, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	primaryConfig := `notify = ["/Applications/Codex Subscription Router Computer Use.app/Contents/MacOS/helper", "turn-ended", "--previous-notify", "[\"/Applications/Codex Subscription Router Computer Use.app/Contents/MacOS/helper\",\"turn-ended\"]"]
+
+[mcp_servers.node_repl]
+command = "/Applications/Codex Subscription Router.app/Contents/Resources/cua_node/bin/node_repl"
+
+[mcp_servers.node_repl.env]
+CODEX_HOME = "/var/empty/primary-codex-home"
+
+[mcp_servers.fuzzy-brain]
+command = "/opt/homebrew/bin/node"
+`
+	if err := os.WriteFile(
+		filepath.Join(primaryHome, "config.toml"),
+		[]byte(primaryConfig),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := Open(filepath.Join(root, "mux"), primaryHome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	account, err := store.AddAccount("Work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := os.ReadFile(filepath.Join(account.CodexHome, "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(config)
+	for _, unwanted := range []string{
+		"notify =",
+		"mcp_servers.node_repl",
+		"Codex Subscription Router",
+		`CODEX_HOME = "/var/empty/primary-codex-home"`,
+	} {
+		if strings.Contains(text, unwanted) {
+			t.Fatalf("account config retained desktop runtime setting %q:\n%s", unwanted, text)
+		}
+	}
+	if !strings.Contains(text, `[mcp_servers.fuzzy-brain]`) {
+		t.Fatalf("unrelated MCP config was removed:\n%s", text)
+	}
+}
+
+func TestAccountHomeSharesComputerUseClientWithoutSharingSessionData(t *testing.T) {
+	root := t.TempDir()
+	primaryHome := filepath.Join(root, "primary")
+	managedComputerUseApp := filepath.Join(root, "managed", "Codex Computer Use.app")
+	if err := os.MkdirAll(managedComputerUseApp, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SKY_CUA_SERVICE_PATH", managedComputerUseApp)
+
+	store, err := Open(filepath.Join(root, "mux"), primaryHome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	account, err := store.AddAccount("Work")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	isolatedComputerUseRoot := filepath.Join(account.CodexHome, "computer-use")
+	sharedApp := filepath.Join(isolatedComputerUseRoot, "Codex Computer Use.app")
+	info, err := os.Lstat(sharedApp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("Computer Use app is not shared through a symlink: %s", sharedApp)
+	}
+	target, err := os.Readlink(sharedApp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target != managedComputerUseApp {
+		t.Fatalf("Computer Use app points to %q, want %q", target, managedComputerUseApp)
+	}
+	if info, err := os.Stat(isolatedComputerUseRoot); err != nil || info.Mode().Perm() != 0o700 {
+		t.Fatalf("isolated Computer Use state is not owner-only: info=%v err=%v", info, err)
+	}
+}
+
 func TestUpdateAccountPreservesController(t *testing.T) {
 	root := t.TempDir()
 	store, err := Open(root, filepath.Join(root, "primary"))
@@ -170,5 +262,50 @@ func TestUpdateAccountPreservesController(t *testing.T) {
 	}
 	if account.Label != label || account.Enabled || !account.Controller {
 		t.Fatalf("unexpected updated account: %#v", account)
+	}
+}
+
+func TestPreferredAccountPersistsAndClearsWhenDisabled(t *testing.T) {
+	root := t.TempDir()
+	primaryHome := filepath.Join(root, "primary")
+	muxRoot := filepath.Join(root, "mux")
+	store, err := Open(muxRoot, primaryHome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	account, err := store.AddAccount("Work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetPreferredAccount(account.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := Open(muxRoot, primaryHome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preferred, ok := reopened.PreferredAccount()
+	if !ok || preferred.ID != account.ID {
+		t.Fatalf("preferred account was not persisted: account=%#v ok=%v", preferred, ok)
+	}
+
+	disabled := false
+	if _, err := reopened.UpdateAccount(account.ID, nil, &disabled); err != nil {
+		t.Fatal(err)
+	}
+	if preferred, ok := reopened.PreferredAccount(); ok {
+		t.Fatalf("disabled account remained preferred: %#v", preferred)
+	}
+}
+
+func TestSetPreferredAccountRejectsUnknownAccount(t *testing.T) {
+	root := t.TempDir()
+	store, err := Open(filepath.Join(root, "mux"), filepath.Join(root, "primary"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetPreferredAccount("missing"); err == nil {
+		t.Fatal("expected an unknown preferred account to be rejected")
 	}
 }

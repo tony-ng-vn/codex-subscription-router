@@ -24,12 +24,14 @@ function loadFunction(name) {
 
 test("separates the subscription name from quiet metadata", () => {
   const identity = loadFunction("codexMuxAccountIdentity");
+  const primary = identity({ label: "Primary - Team - Preferred", planLabel: "Team", preferred: true });
+  const secondary = identity({ label: "Subscription 2 - Team - US", planLabel: "Team", preferred: false });
   assert.deepEqual(
-    { ...identity({ label: "Primary - Team - Preferred", planLabel: "Team", preferred: true }) },
+    { ...primary, metadata: Array.from(primary.metadata) },
     { name: "Primary", metadata: ["Team", "Preferred"] },
   );
   assert.deepEqual(
-    { ...identity({ label: "Subscription 2 - Team - US", planLabel: "Team", preferred: false }) },
+    { ...secondary, metadata: Array.from(secondary.metadata) },
     { name: "Subscription 2", metadata: ["Team", "US"] },
   );
 });

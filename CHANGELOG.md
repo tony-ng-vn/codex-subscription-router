@@ -1,31 +1,50 @@
 # Changelog
 
-All notable changes follow [Keep a Changelog](https://keepachangelog.com/) and
-this project uses [Semantic Versioning](https://semver.org/).
+## v0.5.0
 
-## [Unreleased]
+2026-08-23
 
-### Added
+**Compatibility**
 
-- One-command installer with safe source updates, prerequisite checks, signed
-  rebuilds, recoverable upgrades, and automatic launch.
-- Reset-aware routing that prioritizes weekly quota at risk of expiring and
-  gives a bounded boost to subscriptions with banked usage resets.
+- Added recorded ChatGPT `26.818.41509` build `6962` compatibility and current physical verification evidence.
+- Changed compatibility decisions from a version-only gate to signed-source provenance and complete structural validation.
+- Kept unknown layouts fail-closed while allowing unchanged reviewed layouts to survive a version or hash update.
 
-## [0.1.0] - 2026-08-15
+**Managed ChatGPT**
 
-### Added
+- Added a managed-primary installer mode that preserves the normal ChatGPT identity and profile.
+- Added staged replacement, signing-team continuity checks, and recoverable app backups.
+- Added JavaScript parsing, nested signing, Computer Use identity checks, and strict local token permissions.
 
-- Multi-subscription routing with quota-aware balancing and sticky threads.
-- Account isolation, device-code sign-in, pooled usage, and quota failover.
-- Native account menu, masked emails, plan labels, and profile photos.
-- Combined Profile statistics with per-account selection.
-- Account-scoped Apps and MCP connection state in Settings → Plugins.
-- Per-account rate-limit reset selection and pooled depletion handling.
-- Independently signed Appshots and Computer Use support.
-- Fail-closed upstream compatibility checks and deepest-first nested helper signing.
-- Loopback-only, token-authenticated diagnostic UI states.
-- Source-only CI, draft release automation, security documentation, and smoke tests.
+**Router**
 
-[Unreleased]: https://github.com/b-nnett/codex-subscription-router/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/b-nnett/codex-subscription-router/releases/tag/v0.1.0
+- Added a persistent preferred subscription for new chats while keeping quota failover active.
+- Stopped desktop-only runtime settings and legacy notification commands from entering isolated account configs.
+
+**Interface**
+
+- Added account-specific reset actions and explicit reset targets.
+- Added subscription identity, quota severity, reset-copy, and reset-expiry helpers with automated tests.
+
+**Delivery**
+
+- Moved repository and Go module ownership to `tony-ng-vn/codex-subscription-router`.
+- Added maintained-fork installation, architecture, compatibility, security, and smoke-test documentation.
+
+---
+
+## v0.1.0
+
+2026-08-15
+
+**Router**
+
+- Added multi-subscription routing, account isolation, pooled quota, sticky threads, and failover.
+
+**Interface**
+
+- Added account management, combined profile statistics, account-scoped plugins, and per-account resets.
+
+**Delivery**
+
+- Added source-only build, signing, verification, security, and release tooling.

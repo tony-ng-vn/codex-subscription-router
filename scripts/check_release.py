@@ -14,22 +14,25 @@ ROOT = Path(__file__).resolve().parent.parent
 REQUIRED_FILES = (
     ".github/workflows/ci.yml",
     ".github/workflows/release.yml",
+    "AGENTS.md",
+    "CAPABILITY-MAP.md",
     "CHANGELOG.md",
     "CONTRIBUTING.md",
     "LICENSE",
     "NOTICE.md",
     "README.md",
     "SECURITY.md",
+    "SPEC-maintained-router.md",
     "VERSION",
     "install.sh",
     "docs/ARCHITECTURE.md",
     "docs/COMPATIBILITY.md",
-    "docs/E2E-REPORT-0.1.0.md",
     "docs/RELEASING.md",
     "docs/SECURITY-MODEL.md",
     "docs/SMOKE-TEST.md",
     "package-lock.json",
     "package.json",
+    "scripts/patch_app_test.py",
 )
 CURATED_SCREENSHOTS = (
     "screenshots/account-menu.png",
@@ -70,6 +73,9 @@ def main() -> int:
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
     if re.fullmatch(r"\d+\.\d+\.\d+", version) is None:
         fail(f"VERSION is not semantic: {version!r}")
+    evidence_path = ROOT / "docs" / f"E2E-REPORT-{version}.md"
+    if not evidence_path.is_file():
+        fail(f"missing current-version E2E evidence: {evidence_path.relative_to(ROOT)}")
 
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     lock = json.loads((ROOT / "package-lock.json").read_text(encoding="utf-8"))
@@ -90,15 +96,19 @@ def main() -> int:
         fail("install.sh is not executable")
 
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    dated_heading = rf"^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}$"
+    dated_heading = (
+        rf"^## v{re.escape(version)}\n\n"
+        rf"\d{{4}}-\d{{2}}-\d{{2}}$"
+    )
     if re.search(dated_heading, changelog, re.MULTILINE) is None:
         fail(f"CHANGELOG.md has no dated entry for {version}")
-    expected_release_link = (
-        "https://github.com/b-nnett/codex-subscription-router/releases/tag/"
-        f"v{version}"
+
+    repository_url = package.get("repository", {}).get("url")
+    expected_repository = (
+        "git+https://github.com/tony-ng-vn/codex-subscription-router.git"
     )
-    if expected_release_link not in changelog:
-        fail(f"CHANGELOG.md has no release link for {version}")
+    if repository_url != expected_repository:
+        fail("package.json does not point to the maintained fork")
 
     compatibility = (ROOT / "docs/COMPATIBILITY.md").read_text(encoding="utf-8")
     if f"## Release {version}" not in compatibility:

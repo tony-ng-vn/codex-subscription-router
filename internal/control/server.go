@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/b-nnett/codex-subscription-router/internal/mux"
+	"github.com/tony-ng-vn/codex-subscription-router/internal/mux"
 )
 
 type Server struct {
@@ -241,6 +241,14 @@ func (s *Server) accountAction(response http.ResponseWriter, request *http.Reque
 			return
 		}
 		writeRawJSON(response, http.StatusOK, result)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "prefer" && request.Method == http.MethodPost {
+		if err := s.mux.PreferAccount(accountID); err != nil {
+			writeJSON(response, http.StatusBadRequest, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(response, http.StatusOK, map[string]any{"ok": true})
 		return
 	}
 	if len(parts) != 2 || request.Method != http.MethodPost {

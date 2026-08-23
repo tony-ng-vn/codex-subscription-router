@@ -5,8 +5,31 @@ import (
 	"testing"
 	"time"
 
-	"github.com/b-nnett/codex-subscription-router/internal/protocol"
+	"github.com/tony-ng-vn/codex-subscription-router/internal/protocol"
+	"github.com/tony-ng-vn/codex-subscription-router/internal/state"
 )
+
+func TestPreferredCandidateWinsWhenEligible(t *testing.T) {
+	candidates := []routeCandidate{
+		{account: state.Account{ID: "automatic-first"}},
+		{account: state.Account{ID: "preferred"}},
+	}
+	selected := selectRouteCandidate(candidates, "preferred")
+	if selected.account.ID != "preferred" {
+		t.Fatalf("selected %q, want preferred", selected.account.ID)
+	}
+}
+
+func TestAutomaticCandidateWinsWhenPreferenceIsIneligible(t *testing.T) {
+	candidates := []routeCandidate{
+		{account: state.Account{ID: "automatic-first"}},
+		{account: state.Account{ID: "automatic-second"}},
+	}
+	selected := selectRouteCandidate(candidates, "depleted-preferred")
+	if selected.account.ID != "automatic-first" {
+		t.Fatalf("selected %q, want automatic-first", selected.account.ID)
+	}
+}
 
 func TestIsUsageLimitResponseRecognizesStructuredError(t *testing.T) {
 	message := protocol.Message{Error: &protocol.RPCError{

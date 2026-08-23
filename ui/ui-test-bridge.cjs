@@ -62,25 +62,54 @@ async function runAction(window, action, delayMs) {
     await new Promise((resolve) => setTimeout(resolve, Math.max(delayMs, 1_500)));
     return;
   }
-  if (action === "usage-select-second") {
-    const selected = await window.webContents.executeJavaScript(`(() => {
-      const target=[...document.querySelectorAll('button[aria-pressed]')]
-        .find(button=>button.textContent?.includes('Subscription 2'));
-      if(!target)return false;
-      target.click();
-      return true;
-    })()`);
-    if (!selected) throw new Error("Could not select a secondary reset subscription");
-    const selectionState = await window.webContents.executeJavaScript(`new Promise((resolve) => {
-      const read=()=>{const target=[...document.querySelectorAll('button[aria-pressed]')]
-        .find(button=>button.textContent?.includes('Subscription 2'));
-        return {accountId:globalThis.__codexMuxResetAccountId??null,pressed:target?.getAttribute('aria-pressed')??null};};
-      const deadline=Date.now()+4000;
-      const poll=()=>{const state=read();if(state.accountId&&state.accountId!=="primary"&&state.pressed==="true")resolve(state);else if(Date.now()>=deadline)resolve(state);else setTimeout(poll,100);};
-      poll();
-    })`);
-    if (!selectionState.accountId || selectionState.accountId === "primary" || selectionState.pressed !== "true") {
-      throw new Error(`Secondary reset subscription did not remain selected: ${JSON.stringify(selectionState)}`);
+  if (action === "profile-prefer-second" || action === "profile-reset-second") {
+    const menuIsOpen = await window.webContents.executeJavaScript(`document.body?.innerText?.includes('Usage remaining')??false`);
+    if (!menuIsOpen) {
+      const opened = await window.webContents.executeJavaScript(`(() => {
+        const target=document.querySelector('button[aria-label="Open profile menu"]');
+        if(!target)return false;
+        target.click();
+        return true;
+      })()`);
+      if (!opened) throw new Error("Could not open the profile menu");
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    if (action === "profile-prefer-second") {
+      const selectedLabel = await window.webContents.executeJavaScript(`(() => {
+        const rows=[...document.querySelectorAll('[role="menuitem"],button')]
+          .filter(element=>element.textContent?.includes('Use now'));
+        const target=rows[1]??rows[0];
+        if(!target)return null;
+        const label=target.textContent?.replace(/\\s+/g,' ').trim()??'';
+        target.click();
+        return label.replace('Use now','').trim();
+      })()`);
+      if (!selectedLabel) throw new Error("Could not prefer a secondary subscription");
+      const preferred = await window.webContents.executeJavaScript(`new Promise((resolve) => {
+        const deadline=Date.now()+4000;
+        const poll=()=>{const text=document.body?.innerText??'';if(text.includes('Preferred'))resolve(true);else if(Date.now()>=deadline)resolve(false);else setTimeout(poll,100);};
+        poll();
+      })`);
+      if (!preferred) throw new Error(`Preferred subscription did not update: ${selectedLabel}`);
+    } else {
+      const targetLabel = await window.webContents.executeJavaScript(`(() => {
+        const rows=[...document.querySelectorAll('[role="menuitem"],button')]
+          .filter(element=>element.textContent?.includes('Applies only to')&&element.textContent?.includes('Apply'));
+        const target=rows[1]??rows[0];
+        if(!target)return null;
+        const label=target.textContent?.replace(/\\s+/g,' ').trim()??'';
+        target.click();
+        return label;
+      })()`);
+      if (!targetLabel) throw new Error("Could not open a secondary subscription reset");
+      await new Promise((resolve) => setTimeout(resolve, 750));
+      const resetState = await window.webContents.executeJavaScript(`(() => ({
+        accountId:globalThis.__codexMuxResetAccountId??null,
+        targeted:(document.body?.innerText??'').includes('Apply this reset to'),
+      }))()`);
+      if (!resetState.accountId || !resetState.targeted) {
+        throw new Error(`Reset target was not preserved: ${JSON.stringify(resetState)}`);
+      }
     }
     await new Promise((resolve) => setTimeout(resolve, Math.max(delayMs, 1_500)));
     return;
@@ -384,21 +413,22 @@ function start() {
     if (
       action !== null &&
       action !== "profile" &&
-	  action !== "profile-toggle" &&
-	  action !== "settings-profile" &&
-	  action !== "settings-plugins" &&
-	  action !== "settings-appshots" &&
-	  action !== "settings-computer-use" &&
-	  action !== "plugins-select-second" &&
-	  action !== "usage" &&
-	  action !== "usage-confirm" &&
-	  action !== "usage-confirm-final" &&
-	  action !== "usage-select-second" &&
-	  action !== "appshots-open" &&
-	  action !== "appshots-hotkey" &&
-	  action !== "appshots-settings-trigger" &&
-	  action !== "computer-use-details" &&
-	  action !== "submit-computer-use" &&
+      action !== "profile-toggle" &&
+      action !== "profile-prefer-second" &&
+      action !== "profile-reset-second" &&
+      action !== "settings-profile" &&
+      action !== "settings-plugins" &&
+      action !== "settings-appshots" &&
+      action !== "settings-computer-use" &&
+      action !== "plugins-select-second" &&
+      action !== "usage" &&
+      action !== "usage-confirm" &&
+      action !== "usage-confirm-final" &&
+      action !== "appshots-open" &&
+      action !== "appshots-hotkey" &&
+      action !== "appshots-settings-trigger" &&
+      action !== "computer-use-details" &&
+      action !== "submit-computer-use" &&
       action !== "quota-thread" &&
       action !== "first-thread" &&
       action !== "back-to-app" &&

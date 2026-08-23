@@ -81,9 +81,8 @@ SOURCE_ANCHOR_COUNTS = {
         16,
     ),
 }
-# An untested build still needs exact expected counts. These are deliberately
-# updated only after reviewing the newest supported source structure.
-UNTESTED_SOURCE_ANCHOR_COUNTS = (99, 20)
+SUPPORTED_CUA_IDENTIFIER_COUNTS = frozenset({49, 99})
+SUPPORTED_ASAR_CUA_COUNTS = frozenset({16, 17, 20})
 
 
 def parse_args() -> argparse.Namespace:
@@ -112,7 +111,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--allow-untested-source",
         action="store_true",
-        help="Continue after an explicit version, build, or ASAR hash mismatch.",
+        help=(
+            "Allow a source without an official OpenAI signature. Version and hash "
+            "mismatches are handled by structural validation without this flag."
+        ),
     )
     parser.add_argument(
         "--allow-signing-team-change",
@@ -271,6 +273,42 @@ def signed_code_metadata(path: Path) -> tuple[str | None, str | None]:
     return identifier, team
 
 
+def verify_source_provenance(source: Path) -> None:
+    """Require an intact ChatGPT bundle signed by an official OpenAI team."""
+    identifier, team = signed_code_metadata(source)
+    if identifier != OPENAI_DESKTOP_CODE_IDENTIFIER or team not in {
+        OPENAI_INTERNAL_TEAM_IDENTIFIER,
+        OPENAI_DISTRIBUTION_TEAM_IDENTIFIER,
+    }:
+        raise RuntimeError(
+            "an unrecorded source requires an official OpenAI signature"
+        )
+    run(["codesign", "--verify", "--deep", "--strict", str(source)])
+
+
+def validate_replacement_count(
+    description: str,
+    actual: int,
+    *,
+    expected: int | None,
+    supported: set[int] | frozenset[int],
+) -> int:
+    """Validate a known exact count or a previously reviewed structural count."""
+    if expected is not None:
+        if actual != expected:
+            raise RuntimeError(
+                f"expected {expected} {description}, found {actual}"
+            )
+        return actual
+    if actual not in supported:
+        supported_values = ", ".join(str(value) for value in sorted(supported))
+        raise RuntimeError(
+            f"unsupported {description} count {actual}; expected one of "
+            f"{supported_values}"
+        )
+    return actual
+
+
 def verify_signed_code(
     path: Path,
     expected_identifier: str,
@@ -425,7 +463,7 @@ def retire_stale_cached_computer_use_app(*, managed_primary: bool = False) -> No
 def patch_computer_use_identity(
     app: Path,
     team_identifier: str | None,
-    expected_identifier_replacements: int,
+    expected_identifier_replacements: int | None,
 ) -> None:
     """Give the copied CUA service an independent identity and trusted callers."""
     package = computer_use_package(app)
@@ -445,12 +483,12 @@ def patch_computer_use_identity(
                 OPENAI_COMPUTER_USE_BUNDLE_IDENTIFIER,
                 COMPUTER_USE_BUNDLE_IDENTIFIER,
             )
-    if identifier_replacements != expected_identifier_replacements:
-        raise RuntimeError(
-            "expected "
-            f"{expected_identifier_replacements} Computer Use identity "
-            f"references, found {identifier_replacements}"
-        )
+    validate_replacement_count(
+        "Computer Use identity references",
+        identifier_replacements,
+        expected=expected_identifier_replacements,
+        supported=SUPPORTED_CUA_IDENTIFIER_COUNTS,
+    )
 
     plist_path = service / "Contents" / "Info.plist"
     with plist_path.open("rb") as handle:
@@ -505,7 +543,7 @@ def patch_computer_use_identity(
 
 def patch_asar_computer_use_identity(
     extracted: Path,
-    expected_replacements: int,
+    expected_replacements: int | None,
 ) -> None:
     """Keep desktop launch, temp-file, and service references on the new CUA ID."""
     replacements = 0
@@ -516,12 +554,12 @@ def patch_asar_computer_use_identity(
                 OPENAI_COMPUTER_USE_BUNDLE_IDENTIFIER,
                 COMPUTER_USE_BUNDLE_IDENTIFIER,
             )
-    if replacements != expected_replacements:
-        raise RuntimeError(
-            "expected "
-            f"{expected_replacements} Computer Use references "
-            f"in app.asar, found {replacements}"
-        )
+    validate_replacement_count(
+        "Computer Use references in app.asar",
+        replacements,
+        expected=expected_replacements,
+        supported=SUPPORTED_ASAR_CUA_COUNTS,
+    )
 
 
 def sign_native_code_tree(root: Path, identity: str) -> None:
@@ -749,7 +787,7 @@ def sign_independent_app(
     app: Path,
     identity: str,
     team_identifier: str | None,
-    expected_cua_identifier_replacements: int,
+    expected_cua_identifier_replacements: int | None,
 ) -> None:
     """Apply one stable identity throughout the modified Electron bundle."""
     computer_use_entitlements = capture_computer_use_entitlements(app)
@@ -885,17 +923,37 @@ def patch_app_server_request_bridge(bundle: str) -> str:
     return bundle[: match.start()] + replacement + bundle[match.end() :]
 
 
+def detect_renderer_profile(bundle: str, *, direct_rpc_renderer: bool) -> str:
+    if not direct_rpc_renderer:
+        return "legacy"
+    fingerprints = {
+        "direct": ("function A_a(){", "function M_a(){", "function kxc(e){"),
+        "current": ("function eSa(){", "function nSa(){", "function zFc(e){"),
+        "latest": ("function TCa(){", "function DCa(){", "function Bsc(e){"),
+    }
+    matches = [
+        name
+        for name, markers in fingerprints.items()
+        if all(marker in bundle for marker in markers)
+    ]
+    if len(matches) != 1:
+        raise RuntimeError(
+            "no supported renderer layout matched the source bundle"
+        )
+    return matches[0]
+
+
 def adapt_account_menu_component(
     component: str,
     *,
     direct_rpc_renderer: bool,
-    source_build: str,
+    renderer_profile: str,
 ) -> str:
     if not direct_rpc_renderer:
         return component
 
     symbol_maps = {
-        "6720": {
+        "direct": {
             "e7": "d7",
             "QLs": "kxc",
             "kXc": "NIl",
@@ -907,7 +965,7 @@ def adapt_account_menu_component(
             "jLa": "jwa",
             "lt": "ct",
         },
-        "6892": {
+        "current": {
             "e7": "d7",
             "QLs": "qFc",
             "kXc": "OKl",
@@ -919,7 +977,7 @@ def adapt_account_menu_component(
             "jLa": "_Aa",
             "lt": "ct",
         },
-        "6962": {
+        "latest": {
             "e7": "d7",
             "QLs": "Bsc",
             "kXc": "Pql",
@@ -932,10 +990,10 @@ def adapt_account_menu_component(
             "lt": "ct",
         },
     }
-    component_symbols = symbol_maps.get(source_build)
+    component_symbols = symbol_maps.get(renderer_profile)
     if component_symbols is None:
         raise RuntimeError(
-            f"missing account-menu symbol map for ChatGPT build {source_build}"
+            f"missing account-menu symbols for renderer layout {renderer_profile}"
         )
     for original, replacement in component_symbols.items():
         component = re.sub(
@@ -946,7 +1004,7 @@ def adapt_account_menu_component(
     return component
 
 
-def patch_renderer(extracted: Path, token: str, source_build: str) -> None:
+def patch_renderer(extracted: Path, token: str) -> None:
     webview = extracted / "webview"
     index_path = webview / "index.html"
     index = index_path.read_text(encoding="utf-8")
@@ -977,6 +1035,10 @@ def patch_renderer(extracted: Path, token: str, source_build: str) -> None:
     component_anchor = "function wXc({sidebarFooter:e,triggerButton:t})"
     direct_rpc_renderer = False
     if bundle.count(component_anchor) == 1:
+        renderer_profile = detect_renderer_profile(
+            bundle,
+            direct_rpc_renderer=False,
+        )
         bundle = bundle.replace(component_anchor, component + "\n" + component_anchor, 1)
     else:
         component_pattern = re.compile(
@@ -989,10 +1051,14 @@ def patch_renderer(extracted: Path, token: str, source_build: str) -> None:
         if len(component_matches) != 1:
             raise RuntimeError("could not find the native ChatGPT profile menu component")
         direct_rpc_renderer = True
+        renderer_profile = detect_renderer_profile(
+            bundle,
+            direct_rpc_renderer=True,
+        )
         component = adapt_account_menu_component(
             component,
             direct_rpc_renderer=True,
-            source_build=source_build,
+            renderer_profile=renderer_profile,
         )
         component_start = component_matches[0].start()
         bundle = bundle[:component_start] + component + "\n" + bundle[component_start:]
@@ -1027,14 +1093,8 @@ def patch_renderer(extracted: Path, token: str, source_build: str) -> None:
         )
     else:
         bundle = patch_app_server_request_bridge(bundle)
-    current_rpc_renderer = (
-        direct_rpc_renderer
-        and bundle.count("function eSa(){let e=(0,jV.c)(1)") == 1
-    )
-    latest_rpc_renderer = (
-        direct_rpc_renderer
-        and bundle.count("function TCa(){let e=(0,MV.c)(1)") == 1
-    )
+    current_rpc_renderer = renderer_profile == "current"
+    latest_rpc_renderer = renderer_profile == "latest"
 
     profile_query_pattern = re.compile(
         r"let (?P<result>[A-Za-z_$][\w$]*)=await "
@@ -1688,24 +1748,23 @@ def patch_app(
         f"Source ChatGPT version: {source_version} ({source_build}), "
         f"app.asar {source_asar_hash}"
     )
-    if expected_asar_hash != source_asar_hash and not allow_untested_source:
-        raise RuntimeError(
-            "the source version, build, or app.asar hash is not approved; "
-            "review the upstream change or pass --allow-untested-source"
-        )
     if expected_asar_hash != source_asar_hash:
         print(
-            "Warning: continuing with an untested official ChatGPT build; "
-            "the patch will continue only while every expected anchor matches.",
+            "Source hash is not recorded; verifying the official signature and "
+            "continuing only if every structural capability matches.",
             file=sys.stderr,
         )
+        if allow_untested_source:
+            print(
+                "Warning: source signature verification was explicitly bypassed.",
+                file=sys.stderr,
+            )
+        else:
+            verify_source_provenance(source)
     (
         expected_cua_identifier_replacements,
         expected_asar_cua_identifier_replacements,
-    ) = SOURCE_ANCHOR_COUNTS.get(
-        source_asar_hash,
-        UNTESTED_SOURCE_ANCHOR_COUNTS,
-    )
+    ) = SOURCE_ANCHOR_COUNTS.get(source_asar_hash, (None, None))
 
     for tool in (
         "codesign",
@@ -1772,7 +1831,7 @@ def patch_app(
             installed_computer_use_app,
             managed_primary=managed_primary,
         )
-        patch_renderer(extracted, token, source_build)
+        patch_renderer(extracted, token)
         validate_patched_javascript(extracted)
         sign_native_code_tree(extracted, signing_identity)
         repacked_asar = temporary_path / "app.asar"

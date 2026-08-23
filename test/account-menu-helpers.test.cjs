@@ -64,6 +64,14 @@ test("keeps the earliest usable manual reset expiry", () => {
   );
 });
 
+test("uses correct reset copy for unavailable, singular, and plural states", () => {
+  const resetCopy = loadFunction("codexMuxResetCopy");
+  assert.equal(resetCopy(null), "Reset status unavailable");
+  assert.equal(resetCopy(0), "No resets available");
+  assert.equal(resetCopy(1), "1 reset available");
+  assert.equal(resetCopy(2), "2 resets available");
+});
+
 test("formats valid dates and adds relative urgency only when useful", () => {
   const timing = loadFunction("codexMuxDateTiming");
   const now = new Date("2026-08-23T12:00:00-07:00");

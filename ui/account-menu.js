@@ -110,7 +110,7 @@ function CodexMuxUseResetAccountState() {
   const [selectedId, setSelectedId] = kXc.useState(
     globalThis.__codexMuxInitialResetAccountId || "primary",
   );
-  const [resetCounts, setResetCounts] = kXc.useState({});
+  const [resetSummaries, setResetSummaries] = kXc.useState({});
   const [loading, setLoading] = kXc.useState(cachedAccounts.length === 0);
 
   const loadAccounts = kXc.useCallback(async () => {
@@ -237,10 +237,10 @@ function CodexMuxAccountMenu() {
   const [error, setError] = kXc.useState("");
   const [login, setLogin] = kXc.useState(null);
   const [codeCopied, setCodeCopied] = kXc.useState(false);
-  const resetCountsLoadedAt = kXc.useRef(0);
+  const resetSummariesLoadedAt = kXc.useRef(0);
   const loginAccountId = login?.accountId || null;
 
-  const refresh = kXc.useCallback(async (forceResetCounts = false) => {
+  const refresh = kXc.useCallback(async (forceResetSummaries = false) => {
     try {
       const result = await codexMuxRequest("/accounts");
       const nextAccounts = result.accounts || [];
@@ -248,21 +248,21 @@ function CodexMuxAccountMenu() {
         (account) => account.connected && account.enabled,
       );
       setAccounts(nextAccounts);
-      const resetCountsAreStale =
-        Date.now() - resetCountsLoadedAt.current >= 5 * 60 * 1_000;
-      if (forceResetCounts || resetCountsAreStale) {
+      const resetSummariesAreStale =
+        Date.now() - resetSummariesLoadedAt.current >= 5 * 60 * 1_000;
+      if (forceResetSummaries || resetSummariesAreStale) {
         const resetEntries = await Promise.all(
           globalThis.__codexMuxConnectedAccounts.map(async (account) => {
             try {
               const resets = await codexMuxRateLimitResets(account.id);
-              return [account.id, Math.max(0, resets.applicable_available_count ?? resets.available_count ?? 0)];
+              return [account.id, codexMuxResetSummary(resets)];
             } catch {
-              return [account.id, null];
+              return [account.id, { count: null, expiresAt: null }];
             }
           }),
         );
-        setResetCounts(Object.fromEntries(resetEntries));
-        resetCountsLoadedAt.current = Date.now();
+        setResetSummaries(Object.fromEntries(resetEntries));
+        resetSummariesLoadedAt.current = Date.now();
       }
       setError("");
       if (nextAccounts.some((account) => account.connected)) setLoading(false);
@@ -441,6 +441,8 @@ function CodexMuxAccountMenu() {
   for (const account of connected) {
     const weekly = codexMuxWeeklyWindow(account.rateLimits);
     const remaining = weekly == null ? null : Math.max(0, 100 - weekly.usedPercent);
+    const identity = codexMuxAccountIdentity(account);
+    const usageState = codexMuxUsageState(remaining);
     rows.push(
       (0, e7.jsx)(
         _H,
@@ -459,17 +461,27 @@ function CodexMuxAccountMenu() {
             ? undefined
             : (event) => preferSubscription(event, account.id),
           rightIcon: (0, e7.jsx)("span", {
-            className: "text-token-description-foreground tabular-nums",
+            className: `${usageState.textClass} tabular-nums`,
+            "aria-label": usageState.ariaLabel,
             children: remaining == null ? "-" : `${Math.round(remaining)}%`,
           }),
-          children: account.planLabel
-            ? `${account.label} - ${account.planLabel} - ${account.preferred ? "Preferred" : "Use now"}`
-            : `${account.label} - ${account.preferred ? "Preferred" : "Use now"}`,
+          children: [
+            identity.name,
+            ...identity.metadata,
+            ...(account.preferred ? [] : ["Use now"]),
+          ].join(" - "),
         },
         `codex-mux-account-${account.id}`,
       ),
     );
-    const resetCount = resetCounts[account.id];
+    const resetSummary = resetSummaries[account.id] || {
+      count: null,
+      expiresAt: null,
+    };
+    const resetTiming = codexMuxDateTiming(resetSummary.expiresAt);
+    const resetTarget = account.planLabel
+      ? `Applies only to ${account.label} - ${account.planLabel}`
+      : `Applies only to ${account.label}`;
     rows.push(
       (0, e7.jsx)(
         _H,
@@ -477,28 +489,29 @@ function CodexMuxAccountMenu() {
           LeftIcon: (iconProps) =>
             (0, e7.jsx)(CodexMuxResetCreditIcon, {
               ...iconProps,
-              available: resetCount > 0,
+              available: resetSummary.count > 0,
             }),
-          SubText: account.planLabel
-            ? `Applies only to ${account.label} - ${account.planLabel}`
-            : `Applies only to ${account.label}`,
+          SubText: resetTiming
+            ? `${resetTarget} - Expires ${resetTiming.dateLabel}${
+                resetTiming.relativeLabel
+                  ? ` ${resetTiming.relativeLabel}`
+                  : ""
+              }`
+            : resetTarget,
           onSelect:
-            resetCount > 0
+            resetSummary.count > 0
               ? (event) => openAccountReset(event, account.id)
               : undefined,
           rightIcon:
-            resetCount > 0
+            resetSummary.count > 0
               ? (0, e7.jsx)("span", {
-                  className: "text-chart-green font-medium",
+                  className: resetTiming?.urgent
+                    ? "text-warning font-medium"
+                    : "text-chart-green font-medium",
                   children: "Apply",
                 })
               : null,
-          children:
-            resetCount == null
-              ? "Reset status unavailable"
-              : resetCount === 1
-                ? "1 reset available"
-                : `${resetCount} resets available`,
+          children: codexMuxResetCopy(resetSummary.count),
         },
         `codex-mux-reset-${account.id}`,
       ),

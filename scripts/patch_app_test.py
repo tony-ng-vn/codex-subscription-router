@@ -11,6 +11,23 @@ from scripts import patch_app
 
 
 class PatchAppSigningTests(unittest.TestCase):
+    def test_allows_official_team_transition_for_managed_primary(self) -> None:
+        patch_app.require_signing_team_continuity(
+            patch_app.OPENAI_DISTRIBUTION_TEAM_IDENTIFIER,
+            "TESTTEAM01",
+            managed_primary=True,
+            allow_change=False,
+        )
+
+    def test_rejects_user_team_change_without_explicit_approval(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "signing team differs"):
+            patch_app.require_signing_team_continuity(
+                "OLDTEAM001",
+                "NEWTEAM001",
+                managed_primary=True,
+                allow_change=False,
+            )
+
     def test_accepts_explicit_team_identifier_for_restricted_keychains(self) -> None:
         with mock.patch.dict(
             "os.environ",

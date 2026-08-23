@@ -1,16 +1,16 @@
 {
   "name": "codex-subscription-router-patcher",
   "private": true,
-  "version": "0.1.0",
-  "description": "Build tooling for the independent Codex Subscription Router macOS app patch",
+  "version": "0.5.0",
+  "description": "Build tooling for managed and independent Codex Subscription Router macOS app patches",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/b-nnett/codex-subscription-router.git"
+    "url": "git+https://github.com/tony-ng-vn/codex-subscription-router.git"
   },
-  "homepage": "https://github.com/b-nnett/codex-subscription-router#readme",
+  "homepage": "https://github.com/tony-ng-vn/codex-subscription-router#readme",
   "bugs": {
-    "url": "https://github.com/b-nnett/codex-subscription-router/issues"
+    "url": "https://github.com/tony-ng-vn/codex-subscription-router/issues"
   },
   "engines": {
     "node": ">=22.12"

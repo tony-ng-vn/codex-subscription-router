@@ -1,47 +1,46 @@
 # Signed-app smoke test
 
-Complete this checklist on the exact official build recorded in
-`docs/COMPATIBILITY.md` before publishing a release draft. Use a team-backed
-signature and reuse the same Apple team as the previous installed build.
+Run this checklist on the exact source and commit intended for release.
+Use a team-backed signature and the same Apple team as the previous installed build.
 
-## Build and identity
+## Source and staging
 
-- Confirm the patcher reports the expected version, build, and ASAR SHA-256.
-- Verify the official `/Applications/ChatGPT.app` is unchanged.
-- Verify the app and every nested Computer Use application with
-  `codesign --verify --deep --strict`.
-- Confirm the installed app and helper report the intended bundle IDs and the
-  same `TeamIdentifier`.
+- Record the ChatGPT version, build, pristine ASAR SHA-256, renderer layout, macOS version, and router commit.
+- Confirm an unrecorded source has a valid official OpenAI signature.
+- Confirm every structural patch and JavaScript parse completes in staging.
+- Force one expected anchor to fail in a disposable test and confirm the installed destination remains unchanged.
+
+## Identity and recovery
+
+- Verify the app and every nested Computer Use application with `codesign --verify --deep --strict`.
+- Confirm the outer app, `codex.real`, desktop executable, helper, and client report the intended identifiers and signing team.
+- Rebuild once and confirm the prior destination moves to `~/.codex-mux/backups`.
+- Restore that backup in a disposable location and confirm its signature remains valid.
 
 ## Accounts and routing
 
-- Connect at least two subscriptions and confirm photos, plans, masked emails,
-  pooled usage, and loading states.
-- Start chats until each account has received one; confirm every follow-up stays
-  on its original account.
-- Spoof one depleted account and confirm the thread continues on an account with
-  quota. Spoof all accounts depleted and confirm the combined alert.
-- Open a quota-triggered reset sheet, switch subscriptions, consume a reset, and
-  confirm only the selected account changes.
+- Connect at least two subscriptions and confirm identity, plan, quota, reset status, and loading states.
+- Select `Use now` on the second subscription and confirm a new chat uses it while it has capacity.
+- Confirm follow-up turns stay with the persisted thread owner.
+- Deplete the preferred subscription and confirm routing fails over automatically.
+- Deplete every subscription and confirm the pooled quota alert.
 
-## Settings and plugins
+## Resets, profile, and plugins
 
-- Confirm Profile opens in the combined state, uses 20 px avatar overlap, and
-  toggles between combined and per-account statistics.
-- In Settings → Plugins, select each subscription and verify Apps, MCP status,
-  and MCP OAuth login reflect that account while installed definitions remain
-  shared.
+- Open an account-specific reset and confirm the target subscription is read-only.
+- Consume a reset and confirm only that subscription changes.
+- Toggle combined and per-account profile statistics.
+- Select each subscription in Settings and confirm Apps, MCP status, and MCP OAuth login use that account while definitions remain shared.
 
 ## Appshots and Computer Use
 
-- In System Settings, grant Accessibility to Codex Subscription Router and
-  Screen & System Audio Recording to Codex Subscription Router Computer Use.
-  Quit and reopen when macOS asks.
-- Capture an Appshot from the attachment menu and with the Command-key shortcut.
-- Run a Computer Use task and confirm the native helper performs the action
-  without falling back to `osascript`.
-- Rebuild once with the same signing team and confirm existing permissions still
-  work without adding duplicate permission rows.
+- Grant the required macOS privacy permissions for the selected installation mode.
+- Capture an Appshot from the attachment menu and keyboard shortcut.
+- Run a Computer Use task and confirm the signed helper performs the action.
+- Rebuild with the same signing team and confirm the existing privacy grants still work.
 
-Record the tested commit, macOS version, signing team ID, and any deviations in
-the release draft before publishing it.
+## Release record
+
+- Record all commands and results in the release notes.
+- Record any skipped physical Mac verification as incomplete.
+- Do not publish a release when a required item is unverified.

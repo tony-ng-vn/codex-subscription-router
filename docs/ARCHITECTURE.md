@@ -1,63 +1,55 @@
 # Architecture
 
-The independently built desktop uses bundle identifier `app.cdxmux.multi`; its
-Computer Use helper uses `com.cdxmux.sky.CUAService`. Neither identifier is used
-by the official ChatGPT installation. These identifiers and the `.codex-mux`
-state directory remain stable across the product rename so existing macOS
-privacy grants, connected accounts, and sticky thread ownership continue to
-work.
+Codex Subscription Router supports an independent app and a managed-primary ChatGPT app.
+Both modes replace the staged bundle's `codex` executable with a small Go multiplexer and keep the original executable beside it as `codex.real`.
 
-Codex Subscription Router replaces the copied app's bundled `codex` executable
-with a small Go multiplexer and keeps the original binary beside it as
-`codex.real`.
+## Build transaction
+
+The patcher reads the source version, build, pristine ASAR hash, bundle identity, and signing team.
+A recorded hash selects exact replacement counts.
+An unrecorded source must have an official OpenAI signature and match a reviewed renderer layout and replacement-count set.
+
+The patcher copies the source into staging, extracts `app.asar`, applies every required patch, parses changed JavaScript, repacks the ASAR, updates its integrity record, signs nested code, signs the outer application, and verifies the final signatures.
+The destination is replaced only after the staged application passes all checks.
+An existing destination moves to `~/.codex-mux/backups` first.
+
+## Installation modes
+
+Independent mode uses bundle identifier `app.cdxmux.multi`, a separate Chromium profile, a separate URL scheme, and a separate Computer Use app.
+It leaves `/Applications/ChatGPT.app` unchanged.
+
+Managed-primary mode preserves the ChatGPT display name, `com.openai.codex` bundle identifier, `codex` URL scheme, standard profile, and embedded Computer Use path.
+It replaces `/Applications/ChatGPT.app` only after staging succeeds and keeps a recoverable backup.
+The source for this mode must be a fresh official ChatGPT bundle, not an already patched app.
 
 ## Request routing
 
-The desktop app opens one JSON-RPC app-server connection to the multiplexer.
-The multiplexer starts one real app-server child for every enabled account,
-each with its own `CODEX_HOME` and `CODEX_SQLITE_HOME`.
+The desktop opens one JSON-RPC app-server connection to the multiplexer.
+The multiplexer starts one real app-server child for every enabled account.
+Each child has an isolated `CODEX_HOME` and `CODEX_SQLITE_HOME`.
 
-New threads are assigned using a quota-urgency score: weekly percentage
-remaining divided by the hours until that account resets. Banked usage resets
-add a capped bonus, while short-window usage, existing pinned-thread count, and
-stable account order break close results. Reset-credit metadata is fetched in
-parallel, cached for five minutes, and treated as neutral when unavailable.
-Once a thread ID is known, `state.json` persists its owner. Requests, responses,
-approvals, and notifications are rewritten only as needed to preserve one
-coherent desktop session.
-
-If the owner is depleted, the multiplexer resumes the rollout on an account
-with capacity and updates ownership. Threads do not migrate for ordinary load
-balancing.
+New threads use a quota-urgency score and may honor a persisted preferred account while that account remains eligible.
+Weekly reset timing, banked resets, short-window usage, pinned-thread count, and stable account order break routing ties.
+Once a thread ID is known, `state.json` persists its owner.
+If the owner is depleted, the multiplexer resumes the thread on an account with capacity and updates ownership.
 
 ## Account isolation
 
-The Primary account uses `~/.codex`. Added accounts use
-`~/.codex-mux/accounts/<id>/codex-home`. Managed configuration is copied from
-the Primary account, excluding credential-store settings and project trust.
+The Primary account uses `~/.codex`.
+Secondary accounts use `~/.codex-mux/accounts/<id>/codex-home`.
+Managed configuration is copied from Primary without credential-store settings, project trust, desktop-generated `node_repl` configuration, or legacy router notification commands.
 Each isolated account forces file-backed CLI and MCP OAuth credentials.
 
-## Desktop integration
+## Renderer integration
 
-The patcher extracts `app.asar`, verifies exact upstream anchors, inserts the
-account UI, disables self-update, and repacks the archive with an updated
-integrity hash. The app receives a separate Chromium profile and URL scheme.
-
-The copied Computer Use service, Node runtime, and callers are re-signed under
-one Apple team. The helper uses a separate bundle identity and socket, avoiding
-the official app's privacy grants and app-group container.
-
-## Plugin behavior
-
-Plugin definitions and managed MCP configuration are shared. The Plugins page
-adds an account selector and marks Apps, MCP status, and MCP OAuth requests with
-the selected account ID. The multiplexer removes that private routing marker
-before forwarding the strict RPC request to the chosen child.
+The renderer patch adds the account menu, pooled usage, per-account profile and plugin scope, reset targeting, and thread ownership display.
+Compatibility profiles describe reviewed minified layouts rather than ChatGPT version numbers.
+The patcher still requires exact cardinality for each patch location and rejects an unknown layout.
 
 ## Control API
 
-The renderer talks to a loopback-only HTTP service on port 48123. All private
-routes require a random 256-bit token. CORS is limited to the copied app's
-`app://-` origin. The service exposes account metadata, aggregated usage and
-profile data, thread ownership, login/logout actions, and an authenticated SSE
-event stream; it never returns OAuth tokens.
+The renderer talks to a loopback HTTP service on port `48123`.
+All private routes require a random 256-bit token.
+CORS is limited to the app origin.
+The service returns account metadata, quota, profile data, thread ownership, and authenticated events.
+It never returns OAuth tokens.

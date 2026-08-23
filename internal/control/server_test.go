@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/b-nnett/codex-subscription-router/internal/mux"
-	"github.com/b-nnett/codex-subscription-router/internal/state"
+	"github.com/tony-ng-vn/codex-subscription-router/internal/mux"
+	"github.com/tony-ng-vn/codex-subscription-router/internal/state"
 )
 
 func TestPreferAccountPersistsRoutingPreference(t *testing.T) {

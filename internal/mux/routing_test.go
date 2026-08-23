@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/b-nnett/codex-subscription-router/internal/protocol"
-	"github.com/b-nnett/codex-subscription-router/internal/state"
+	"github.com/tony-ng-vn/codex-subscription-router/internal/protocol"
+	"github.com/tony-ng-vn/codex-subscription-router/internal/state"
 )
 
 func TestPreferredCandidateWinsWhenEligible(t *testing.T) {

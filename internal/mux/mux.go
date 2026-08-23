@@ -14,9 +14,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/b-nnett/codex-subscription-router/internal/backend"
-	"github.com/b-nnett/codex-subscription-router/internal/protocol"
-	"github.com/b-nnett/codex-subscription-router/internal/state"
+	"github.com/tony-ng-vn/codex-subscription-router/internal/backend"
+	"github.com/tony-ng-vn/codex-subscription-router/internal/protocol"
+	"github.com/tony-ng-vn/codex-subscription-router/internal/state"
 )
 
 const requestTimeout = 30 * time.Second

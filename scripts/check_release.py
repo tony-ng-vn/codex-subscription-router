@@ -27,7 +27,6 @@ REQUIRED_FILES = (
     "install.sh",
     "docs/ARCHITECTURE.md",
     "docs/COMPATIBILITY.md",
-    "docs/E2E-REPORT-0.1.0.md",
     "docs/RELEASING.md",
     "docs/SECURITY-MODEL.md",
     "docs/SMOKE-TEST.md",
@@ -74,6 +73,9 @@ def main() -> int:
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
     if re.fullmatch(r"\d+\.\d+\.\d+", version) is None:
         fail(f"VERSION is not semantic: {version!r}")
+    evidence_path = ROOT / "docs" / f"E2E-REPORT-{version}.md"
+    if not evidence_path.is_file():
+        fail(f"missing current-version E2E evidence: {evidence_path.relative_to(ROOT)}")
 
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     lock = json.loads((ROOT / "package-lock.json").read_text(encoding="utf-8"))

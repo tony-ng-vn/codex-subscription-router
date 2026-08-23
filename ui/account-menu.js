@@ -567,6 +567,103 @@ function codexMuxWeeklyWindow(rateLimits) {
   return windows.at(-1) || null;
 }
 
+function codexMuxAccountIdentity(account) {
+  const parts = String(account.label || "Subscription")
+    .split(/\s+-\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const name = parts.shift() || "Subscription";
+  const metadata = [];
+  const addMetadata = (value) => {
+    const normalized = String(value || "").trim();
+    if (
+      !normalized ||
+      normalized.toLowerCase() === name.toLowerCase() ||
+      metadata.some((item) => item.toLowerCase() === normalized.toLowerCase())
+    ) {
+      return;
+    }
+    metadata.push(normalized);
+  };
+  parts.forEach(addMetadata);
+  addMetadata(account.planLabel);
+  if (account.preferred) addMetadata("Preferred");
+  return { name, metadata };
+}
+
+function codexMuxUsageState(remaining) {
+  const rounded = remaining == null ? null : Math.max(0, Math.round(remaining));
+  if (rounded == null) {
+    return {
+      level: "unknown",
+      textClass: "text-token-description-foreground",
+      ariaLabel: "Usage remaining unavailable",
+    };
+  }
+  const ariaLabel = `${rounded}% usage remaining`;
+  if (rounded === 0) {
+    return { level: "critical", textClass: "text-danger font-medium", ariaLabel };
+  }
+  if (rounded < 20) {
+    return { level: "low", textClass: "text-warning font-medium", ariaLabel };
+  }
+  if (rounded < 50) {
+    return { level: "warning", textClass: "text-warning", ariaLabel };
+  }
+  return {
+    level: "normal",
+    textClass: "text-token-description-foreground",
+    ariaLabel,
+  };
+}
+
+function codexMuxResetSummary(resets) {
+  if (resets == null) return { count: null, expiresAt: null };
+  const count = Math.max(
+    0,
+    resets.applicable_available_count ?? resets.available_count ?? 0,
+  );
+  if (count === 0) return { count, expiresAt: null };
+  const expiries = (resets.credits || [])
+    .filter(
+      (credit) =>
+        credit.status === "available" && credit.is_supported_by_plan !== false,
+    )
+    .map((credit) => credit.expires_at)
+    .filter((value) => value != null && !Number.isNaN(Date.parse(value)))
+    .sort((left, right) => Date.parse(left) - Date.parse(right));
+  return { count, expiresAt: expiries[0] || null };
+}
+
+function codexMuxResetCopy(count) {
+  if (count == null) return "Reset status unavailable";
+  if (count === 0) return "No resets available";
+  if (count === 1) return "1 reset available";
+  return `${count} resets available`;
+}
+
+function codexMuxDateTiming(value, now = new Date()) {
+  if (value == null) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const startOfNow = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const days = Math.round((startOfDate - startOfNow) / 86_400_000);
+  let relativeLabel = null;
+  if (days < 0) relativeLabel = "expired";
+  else if (days === 0) relativeLabel = "today";
+  else if (days === 1) relativeLabel = "tomorrow";
+  else if (days <= 7) relativeLabel = `in ${days} days`;
+  return {
+    dateLabel: new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+    }).format(date),
+    relativeLabel,
+    urgent: days >= 0 && days <= 2,
+  };
+}
+
 function codexMuxUsageWindows(rateLimits) {
   return [rateLimits?.primary, rateLimits?.secondary]
     .filter(Boolean)

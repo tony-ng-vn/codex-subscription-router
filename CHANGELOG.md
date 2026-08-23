@@ -6,7 +6,7 @@
 
 **Compatibility**
 
-- Added verified ChatGPT `26.818.41509` build `6962` support.
+- Added recorded ChatGPT `26.818.41509` build `6962` compatibility and current physical verification evidence.
 - Changed compatibility decisions from a version-only gate to signed-source provenance and complete structural validation.
 - Kept unknown layouts fail-closed while allowing unchanged reviewed layouts to survive a version or hash update.
 

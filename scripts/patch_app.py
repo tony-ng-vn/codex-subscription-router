@@ -281,9 +281,24 @@ def verify_source_provenance(source: Path) -> None:
         OPENAI_DISTRIBUTION_TEAM_IDENTIFIER,
     }:
         raise RuntimeError(
-            "an unrecorded source requires an official OpenAI signature"
+            "the source requires an official OpenAI signature"
         )
     run(["codesign", "--verify", "--deep", "--strict", str(source)])
+
+
+def verify_or_allow_source_provenance(
+    source: Path,
+    *,
+    allow_untested_source: bool,
+) -> None:
+    """Verify the whole source bundle unless the diagnostic override is explicit."""
+    if allow_untested_source:
+        print(
+            "Warning: source signature verification was explicitly bypassed.",
+            file=sys.stderr,
+        )
+        return
+    verify_source_provenance(source)
 
 
 def validate_replacement_count(
@@ -1774,13 +1789,10 @@ def patch_app(
             "continuing only if every structural capability matches.",
             file=sys.stderr,
         )
-        if allow_untested_source:
-            print(
-                "Warning: source signature verification was explicitly bypassed.",
-                file=sys.stderr,
-            )
-        else:
-            verify_source_provenance(source)
+    verify_or_allow_source_provenance(
+        source,
+        allow_untested_source=allow_untested_source,
+    )
     (
         expected_cua_identifier_replacements,
         expected_asar_cua_identifier_replacements,

@@ -110,7 +110,7 @@ function CodexMuxUseResetAccountState() {
   const [selectedId, setSelectedId] = kXc.useState(
     globalThis.__codexMuxInitialResetAccountId || "primary",
   );
-  const [resetSummaries, setResetSummaries] = kXc.useState({});
+  const [resetCounts, setResetCounts] = kXc.useState({});
   const [loading, setLoading] = kXc.useState(cachedAccounts.length === 0);
 
   const loadAccounts = kXc.useCallback(async () => {
@@ -231,7 +231,7 @@ function CodexMuxResetAccountTarget({
 function CodexMuxAccountMenu() {
   const modalScope = Lo(Q);
   const [accounts, setAccounts] = kXc.useState([]);
-  const [resetCounts, setResetCounts] = kXc.useState({});
+  const [resetSummaries, setResetSummaries] = kXc.useState({});
   const [loading, setLoading] = kXc.useState(true);
   const [busy, setBusy] = kXc.useState(false);
   const [error, setError] = kXc.useState("");

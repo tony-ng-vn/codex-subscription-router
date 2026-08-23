@@ -7,7 +7,7 @@ const vm = require("node:vm");
 const sourcePath = path.join(__dirname, "..", "ui", "account-menu.js");
 const source = fs.readFileSync(sourcePath, "utf8");
 
-function loadFunction(name) {
+function functionSource(name) {
   const start = source.indexOf(`function ${name}(`);
   assert.notEqual(start, -1, `${name} must exist in account-menu.js`);
   const bodyStart = source.indexOf("{", start);
@@ -16,11 +16,25 @@ function loadFunction(name) {
     if (source[index] === "{") depth += 1;
     if (source[index] === "}") depth -= 1;
     if (depth === 0) {
-      return vm.runInNewContext(`(${source.slice(start, index + 1)})`);
+      return source.slice(start, index + 1);
     }
   }
   throw new Error(`Could not parse ${name}`);
 }
+
+function loadFunction(name) {
+  return vm.runInNewContext(`(${functionSource(name)})`);
+}
+
+test("keeps reset state names aligned in both account components", () => {
+  const resetState = functionSource("CodexMuxUseResetAccountState");
+  assert.match(resetState, /\[resetCounts, setResetCounts\]/);
+  assert.doesNotMatch(resetState, /resetSummaries|setResetSummaries/);
+
+  const menu = functionSource("CodexMuxAccountMenu");
+  assert.match(menu, /\[resetSummaries, setResetSummaries\]/);
+  assert.doesNotMatch(menu, /resetCounts|setResetCounts/);
+});
 
 test("separates the subscription name from quiet metadata", () => {
   const identity = loadFunction("codexMuxAccountIdentity");

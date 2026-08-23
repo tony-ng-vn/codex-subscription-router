@@ -11,6 +11,25 @@ from scripts import patch_app
 
 
 class PatchAppSigningTests(unittest.TestCase):
+    def test_verifies_recorded_source_provenance(self) -> None:
+        source = Path("/Applications/ChatGPT.app")
+        with mock.patch.object(patch_app, "verify_source_provenance") as verify:
+            patch_app.verify_or_allow_source_provenance(
+                source,
+                allow_untested_source=False,
+            )
+
+        verify.assert_called_once_with(source)
+
+    def test_allows_explicit_source_provenance_override(self) -> None:
+        with mock.patch.object(patch_app, "verify_source_provenance") as verify:
+            patch_app.verify_or_allow_source_provenance(
+                Path("/tmp/ChatGPT.app"),
+                allow_untested_source=True,
+            )
+
+        verify.assert_not_called()
+
     def test_allows_official_team_transition_for_managed_primary(self) -> None:
         patch_app.require_signing_team_continuity(
             patch_app.OPENAI_DISTRIBUTION_TEAM_IDENTIFIER,

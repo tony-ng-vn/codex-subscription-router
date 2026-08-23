@@ -644,7 +644,12 @@ function codexMuxResetCopy(count) {
 
 function codexMuxDateTiming(value, now = new Date()) {
   if (value == null) return null;
-  const date = new Date(value);
+  const numericValue = typeof value === "number" ? value : null;
+  const date = new Date(
+    numericValue != null && Number.isFinite(numericValue)
+      ? numericValue * 1_000
+      : value,
+  );
   if (Number.isNaN(date.getTime())) return null;
   const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   const startOfNow = new Date(now.getFullYear(), now.getMonth(), now.getDate());

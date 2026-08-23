@@ -141,7 +141,7 @@ class PatchAppCompatibilityTests(unittest.TestCase):
         self.assertIn("t=codexMuxScopePluginRequest(e,t);return", patched)
 
     def test_detects_current_renderer_layout_without_using_build_number(self) -> None:
-        bundle = "function eSa(){let e=(0,jV.c)(1)"
+        bundle = "function eSa(){} function nSa(){} function zFc(e){}"
 
         self.assertEqual(
             patch_app.detect_renderer_profile(bundle, direct_rpc_renderer=True),
@@ -149,7 +149,7 @@ class PatchAppCompatibilityTests(unittest.TestCase):
         )
 
     def test_detects_latest_renderer_layout_without_using_build_number(self) -> None:
-        bundle = "function TCa(){let e=(0,MV.c)(1)"
+        bundle = "function TCa(){} function DCa(){} function Bsc(e){}"
 
         self.assertEqual(
             patch_app.detect_renderer_profile(bundle, direct_rpc_renderer=True),

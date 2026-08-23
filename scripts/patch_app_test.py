@@ -183,6 +183,41 @@ class PatchAppCompatibilityTests(unittest.TestCase):
                 supported={49, 99},
             )
 
+    def test_accepts_unrecorded_source_signed_by_openai(self) -> None:
+        with (
+            mock.patch.object(
+                patch_app,
+                "signed_code_metadata",
+                return_value=(
+                    patch_app.OPENAI_DESKTOP_CODE_IDENTIFIER,
+                    patch_app.OPENAI_DISTRIBUTION_TEAM_IDENTIFIER,
+                ),
+            ),
+            mock.patch.object(patch_app, "run") as run,
+        ):
+            patch_app.verify_source_provenance(Path("/Applications/ChatGPT.app"))
+
+        run.assert_called_once_with(
+            [
+                "codesign",
+                "--verify",
+                "--deep",
+                "--strict",
+                "/Applications/ChatGPT.app",
+            ]
+        )
+
+    def test_rejects_unrecorded_source_signed_by_another_team(self) -> None:
+        with (
+            mock.patch.object(
+                patch_app,
+                "signed_code_metadata",
+                return_value=(patch_app.OPENAI_DESKTOP_CODE_IDENTIFIER, "OTHERTEAM1"),
+            ),
+            self.assertRaisesRegex(RuntimeError, "official OpenAI signature"),
+        ):
+            patch_app.verify_source_provenance(Path("/tmp/ChatGPT.app"))
+
     def test_adapts_account_menu_symbols_for_current_layout(self) -> None:
         component = "e7 QLs kXc Lo BW _H S2 CH jLa lt"
 

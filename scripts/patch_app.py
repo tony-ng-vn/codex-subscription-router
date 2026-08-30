@@ -446,6 +446,31 @@ def arm64_swift_small_string(value: str) -> bytes:
     )
 
 
+def arm64_peer_authorizer_team(value: str) -> bytes:
+    """Encode the build 7377 instructions that materialize its trusted team."""
+    encoded = value.encode("ascii")
+    if len(encoded) != 10:
+        raise ValueError("a signing team identifier must contain 10 ASCII bytes")
+
+    def instruction(base: int, immediate: int, register: int, shift: int = 0) -> bytes:
+        word = base | ((shift // 16) << 21) | (immediate << 5) | register
+        return word.to_bytes(4, "little")
+
+    chunks = [
+        int.from_bytes(encoded[index : index + 2], "little")
+        for index in range(0, len(encoded), 2)
+    ]
+    return b"".join(
+        (
+            instruction(0xD2800000, chunks[0], 13),
+            instruction(0xF2800000, chunks[1], 13, 16),
+            instruction(0xF2800000, chunks[2], 13, 32),
+            instruction(0xF2800000, chunks[3], 13, 48),
+            instruction(0x52800000, chunks[4], 14),
+        )
+    )
+
+
 def replace_same_length_identifier(
     path: Path, original: str, replacement: str
 ) -> int:
@@ -630,8 +655,19 @@ def patch_native_peer_authorizer(
             "expected 8 native peer-authorizer team references, "
             f"found {references}"
         )
-    # The first reference is the runtime allowlist. The remaining references
-    # belong to the old signature and disappear when the addon is re-signed.
+    compiled_original = arm64_peer_authorizer_team(
+        OPENAI_DISTRIBUTION_TEAM_IDENTIFIER
+    )
+    compiled_replacement = arm64_peer_authorizer_team(team_identifier)
+    compiled_references = data.count(compiled_original)
+    if compiled_references != 1:
+        raise RuntimeError(
+            "expected 1 compiled native peer-authorizer team reference, "
+            f"found {compiled_references}"
+        )
+    data = data.replace(compiled_original, compiled_replacement, 1)
+    # Keep the diagnostic team string aligned too. The other seven copies are
+    # part of the old signature and disappear when codesign replaces it.
     addon.write_bytes(data.replace(original, replacement, 1))
     return addon
 

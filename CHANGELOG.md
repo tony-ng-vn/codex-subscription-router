@@ -13,7 +13,14 @@
 
 - Changed the managed-primary installer so the same command can update an already patched app.
 - Added an official-update preparation step that checks the OpenAI download location, advertised size, app identity, version, build, Apple signature, and Gatekeeper assessment before patching.
+- Blocked redirected downloads and managed downgrades before any app replacement.
 - Kept router accounts, preferences, thread ownership, backups, and credentials outside the replaceable app bundle.
+
+**Security**
+
+- Updated build 7377 native peer authorization so app tools trust the router signing team without disabling the peer check.
+- Required the peer-authorizer addon on current builds and verified its final identifier and signing team.
+- Changed the release gate to reject incomplete physical verification evidence.
 
 ---
 

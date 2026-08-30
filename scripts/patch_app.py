@@ -62,6 +62,10 @@ TESTED_SOURCE_BUILDS = {
         "26.818.41509",
         "6962",
     ): "8eb91bd9efbf9a4dd04b9b0afdbfcb4e0bab5da18c1919ad74ca327c00c7e791",
+    (
+        "26.825.51511",
+        "7377",
+    ): "f56ac8d5254a10fc4a04e7417fa787d135c3bbca49bad7d668d4ae65833d40c7",
 }
 SOURCE_ANCHOR_COUNTS = {
     "d5a44ed9e2f1db5f81dbbe85408aed256f3203c5b16f00817bb9d7cd941343cf": (
@@ -78,6 +82,10 @@ SOURCE_ANCHOR_COUNTS = {
     ),
     "8eb91bd9efbf9a4dd04b9b0afdbfcb4e0bab5da18c1919ad74ca327c00c7e791": (
         99,
+        16,
+    ),
+    "f56ac8d5254a10fc4a04e7417fa787d135c3bbca49bad7d668d4ae65833d40c7": (
+        49,
         16,
     ),
 }

@@ -14,6 +14,21 @@ readonly SOURCE_DIR="${CODEX_SUBSCRIPTION_ROUTER_SOURCE_DIR:-${DEFAULT_SOURCE_DI
 readonly DESTINATION_APP="${HOME}/Applications/Codex Subscription Router.app"
 readonly DESTINATION_HELPER="${HOME}/Applications/Codex Subscription Router Computer Use.app"
 readonly MANAGED_DESTINATION_APP="/Applications/ChatGPT.app"
+MANAGED_SOURCE_DIR=""
+
+cleanup_managed_source() {
+    if [ -z "${MANAGED_SOURCE_DIR}" ]; then
+        return
+    fi
+    case "${MANAGED_SOURCE_DIR}" in
+        /tmp/codex-subscription-router-source.*)
+            rm -rf -- "${MANAGED_SOURCE_DIR}"
+            ;;
+    esac
+    MANAGED_SOURCE_DIR=""
+}
+
+trap cleanup_managed_source EXIT
 
 log() {
     printf '\n==> %s\n' "$1" >&2
@@ -125,7 +140,7 @@ stop_bundle_processes() {
 usage() {
     printf '%s\n' "Usage: install.sh [--independent|--managed-primary]"
     printf '%s\n' "  --independent      Install a separate router app. This is the default."
-    printf '%s\n' "  --managed-primary  Replace ChatGPT with a signed, recoverable router build."
+    printf '%s\n' "  --managed-primary  Install or update a signed, recoverable router build."
 }
 
 main() {
@@ -155,21 +170,24 @@ main() {
     npm ci --ignore-scripts --no-audit --no-fund
 
     if [ "${install_mode}" = "managed-primary" ]; then
-        if grep -aq "CodexMuxAccountMenu" \
-            "${MANAGED_DESTINATION_APP}/Contents/Resources/app.asar"; then
-            fail "managed ChatGPT is already patched; install a fresh official ChatGPT update before rebuilding it."
-        fi
-        log "Stopping ChatGPT"
-        stop_bundle_processes "${MANAGED_DESTINATION_APP}"
-
-        local managed_source_dir
-        managed_source_dir="$(mktemp -d /tmp/codex-subscription-router-source.XXXXXX)"
-        case "${managed_source_dir}" in
+        MANAGED_SOURCE_DIR="$(mktemp -d /tmp/codex-subscription-router-source.XXXXXX)"
+        case "${MANAGED_SOURCE_DIR}" in
             /tmp/codex-subscription-router-source.*) ;;
             *) fail "could not create a safe temporary source directory." ;;
         esac
-        local managed_source_app="${managed_source_dir}/ChatGPT.app"
-        ditto "${MANAGED_DESTINATION_APP}" "${managed_source_app}"
+        local managed_source_app="${MANAGED_SOURCE_DIR}/ChatGPT.app"
+
+        if grep -aq "CodexMuxAccountMenu" \
+            "${MANAGED_DESTINATION_APP}/Contents/Resources/app.asar"; then
+            log "Preparing the latest official ChatGPT update"
+            python3 -m scripts.update_managed --output "${managed_source_app}"
+        else
+            log "Copying the official ChatGPT app"
+            ditto "${MANAGED_DESTINATION_APP}" "${managed_source_app}"
+        fi
+
+        log "Stopping ChatGPT"
+        stop_bundle_processes "${MANAGED_DESTINATION_APP}"
 
         log "Building and signing managed ChatGPT"
         python3 scripts/patch_app.py \
@@ -178,7 +196,7 @@ main() {
             --managed-primary \
             --force
 
-        rm -rf -- "${managed_source_dir}"
+        cleanup_managed_source
         log "Launching ChatGPT"
         open "${MANAGED_DESTINATION_APP}"
         printf '\nInstalled successfully: %s\n' "${MANAGED_DESTINATION_APP}"

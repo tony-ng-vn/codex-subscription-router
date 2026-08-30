@@ -33,6 +33,8 @@ REQUIRED_FILES = (
     "package-lock.json",
     "package.json",
     "scripts/patch_app_test.py",
+    "scripts/update_managed.py",
+    "scripts/update_managed_test.py",
 )
 CURATED_SCREENSHOTS = (
     "screenshots/account-menu.png",

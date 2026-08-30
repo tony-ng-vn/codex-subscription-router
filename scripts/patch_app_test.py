@@ -11,6 +11,44 @@ from scripts import patch_app
 
 
 class PatchAppSigningTests(unittest.TestCase):
+    def test_retargets_native_peer_authorizer_to_router_team(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            app = Path(temporary) / "ChatGPT.app"
+            addon = (
+                app
+                / "Contents"
+                / "Resources"
+                / "native"
+                / "browser-use-peer-authorization.node"
+            )
+            addon.parent.mkdir(parents=True)
+            original = patch_app.OPENAI_DISTRIBUTION_TEAM_IDENTIFIER.encode("ascii")
+            addon.write_bytes(b"code:" + original + b";signature:" + original * 7)
+
+            patched = patch_app.patch_native_peer_authorizer(app, "WYMJ4KK3T2")
+
+            self.assertEqual(patched, addon)
+            result = addon.read_bytes()
+            self.assertIn(b"code:WYMJ4KK3T2", result)
+            self.assertEqual(result.count(original), 7)
+
+    def test_rejects_changed_native_peer_authorizer_layout(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            app = Path(temporary) / "ChatGPT.app"
+            addon = (
+                app
+                / "Contents"
+                / "Resources"
+                / "native"
+                / "browser-use-peer-authorization.node"
+            )
+            addon.parent.mkdir(parents=True)
+            original = patch_app.OPENAI_DISTRIBUTION_TEAM_IDENTIFIER.encode("ascii")
+            addon.write_bytes(original * 2)
+
+            with self.assertRaisesRegex(RuntimeError, "peer-authorizer team references"):
+                patch_app.patch_native_peer_authorizer(app, "WYMJ4KK3T2")
+
     def test_verifies_recorded_source_provenance(self) -> None:
         source = Path("/Applications/ChatGPT.app")
         with mock.patch.object(patch_app, "verify_source_provenance") as verify:

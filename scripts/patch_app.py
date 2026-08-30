@@ -91,6 +91,7 @@ SOURCE_ANCHOR_COUNTS = {
 }
 SUPPORTED_CUA_IDENTIFIER_COUNTS = frozenset({49, 99})
 SUPPORTED_ASAR_CUA_COUNTS = frozenset({16, 17, 20})
+NATIVE_PEER_AUTHORIZER_MIN_BUILD = 7377
 
 
 def parse_args() -> argparse.Namespace:
@@ -633,6 +634,8 @@ def patch_asar_computer_use_identity(
 def patch_native_peer_authorizer(
     app: Path,
     team_identifier: str | None,
+    *,
+    required: bool = False,
 ) -> Path | None:
     """Trust the team used to re-sign Codex app-tools pipe clients."""
     addon = (
@@ -642,7 +645,11 @@ def patch_native_peer_authorizer(
         / "native"
         / "browser-use-peer-authorization.node"
     )
-    if not addon.is_file() or team_identifier is None:
+    if team_identifier is None:
+        return None
+    if not addon.is_file():
+        if required:
+            raise RuntimeError("required native peer-authorizer addon was not found")
         return None
     original = OPENAI_DISTRIBUTION_TEAM_IDENTIFIER.encode("ascii")
     replacement = team_identifier.encode("ascii")
@@ -898,6 +905,8 @@ def sign_independent_app(
     identity: str,
     team_identifier: str | None,
     expected_cua_identifier_replacements: int | None,
+    *,
+    require_peer_authorizer: bool = False,
 ) -> None:
     """Apply one stable identity throughout the modified Electron bundle."""
     computer_use_entitlements = capture_computer_use_entitlements(app)
@@ -907,12 +916,21 @@ def sign_independent_app(
         expected_cua_identifier_replacements,
     )
     sign_computer_use_code(app, identity, computer_use_entitlements)
-    peer_authorizer = patch_native_peer_authorizer(app, team_identifier)
+    peer_authorizer = patch_native_peer_authorizer(
+        app,
+        team_identifier,
+        required=require_peer_authorizer,
+    )
     if peer_authorizer is not None:
         sign_runtime_executable(
             peer_authorizer,
             identity,
             "browser_use_peer_authorization.node",
+        )
+        verify_signed_code(
+            peer_authorizer,
+            "browser_use_peer_authorization.node",
+            team_identifier,
         )
     real_codex = app / "Contents" / "Resources" / "codex.real"
     if not real_codex.is_file():
@@ -2089,6 +2107,11 @@ def patch_app(
             signing_identity,
             team_identifier,
             expected_cua_identifier_replacements,
+            require_peer_authorizer=(
+                team_identifier is not None
+                and source_build.isdigit()
+                and int(source_build) >= NATIVE_PEER_AUTHORIZER_MIN_BUILD
+            ),
         )
         verify_signed_code(
             staged_app,

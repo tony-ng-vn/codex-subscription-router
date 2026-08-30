@@ -111,7 +111,7 @@ def fetch_latest_release() -> OfficialRelease:
     )
     with urllib.request.urlopen(request, timeout=30) as response:
         if response.geturl() != APPCAST_URL:
-            raise RuntimeError("official update feed was redirected")
+            raise RuntimeError("redirected update feed response")
         feed = response.read(MAX_APPCAST_BYTES + 1)
     if len(feed) > MAX_APPCAST_BYTES:
         raise RuntimeError("official update feed is unexpectedly large")
@@ -126,7 +126,7 @@ def download_release(release: OfficialRelease, destination: Path) -> None:
     received = 0
     with urllib.request.urlopen(request, timeout=60) as response:
         if response.geturl() != release.url:
-            raise RuntimeError("official update archive was redirected")
+            raise RuntimeError("redirected update archive response")
         content_length = response.headers.get("Content-Length")
         if content_length is not None and int(content_length) != release.length:
             raise RuntimeError("download byte count does not match the official feed")

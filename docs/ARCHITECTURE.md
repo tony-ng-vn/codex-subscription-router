@@ -20,7 +20,9 @@ It leaves `/Applications/ChatGPT.app` unchanged.
 
 Managed-primary mode preserves the ChatGPT display name, `com.openai.codex` bundle identifier, `codex` URL scheme, standard profile, and embedded Computer Use path.
 It replaces `/Applications/ChatGPT.app` only after staging succeeds and keeps a recoverable backup.
-The source for this mode must be a fresh official ChatGPT bundle, not an already patched app.
+When the installed app is already patched, the installer downloads the newest full Apple silicon release from OpenAI's appcast into a temporary directory.
+It checks the official host and advertised byte count before extraction, then requires the expected bundle identity, appcast version and build, an official OpenAI Apple signature, and a passing Gatekeeper assessment.
+The verified official bundle becomes the source for the normal staged build transaction.
 
 ## Request routing
 

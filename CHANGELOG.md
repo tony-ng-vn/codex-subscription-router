@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.6.0
+
+2026-08-30
+
+**Compatibility**
+
+- Added reviewed renderer mappings and exact source metadata for ChatGPT `26.825.51511`, build `7377`.
+- Removed two dependencies on changing internal renderer helpers by owning the usage icon and trusted profile-image validation in the injected UI.
+
+**Managed ChatGPT**
+
+- Changed the managed-primary installer so the same command can update an already patched app.
+- Added an official-update preparation step that checks the OpenAI download location, advertised size, app identity, version, build, Apple signature, and Gatekeeper assessment before patching.
+- Kept router accounts, preferences, thread ownership, backups, and credentials outside the replaceable app bundle.
+
+---
+
 ## v0.5.0
 
 2026-08-23

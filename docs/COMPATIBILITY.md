@@ -3,6 +3,18 @@
 The source hash records provenance.
 The staged structural checks decide whether a source can be patched.
 
+## Release 0.6.0
+
+| Component | Tested value |
+| --- | --- |
+| Official ChatGPT version | `26.825.51511` |
+| Official bundle build | `7377` |
+| Pristine `app.asar` SHA-256 | `f56ac8d5254a10fc4a04e7417fa787d135c3bbca49bad7d668d4ae65833d40c7` |
+| Renderer layout | `build_7377` |
+| Architecture | Apple silicon `arm64` |
+
+This release adds build 7377 renderer support and a managed updater that prepares a fresh official source when the installed app is already patched.
+
 ## Release 0.5.0
 
 | Component | Tested value |
@@ -23,6 +35,7 @@ This release includes the managed-primary installation currently used on build `
 | `26.814.41407` | `6720` | `8fba32f8baa6d984b0f0f4149d3da46221e3adb3b52836f85fe65e31e655a8c0` | `direct` |
 | `26.818.31338` | `6892` | `7db5508d4acd2c324cc572cd6f8d6d07900d185831bd6d54005a573e7186de54` | `current` |
 | `26.818.41509` | `6962` | `8eb91bd9efbf9a4dd04b9b0afdbfcb4e0bab5da18c1919ad74ca327c00c7e791` | `latest` |
+| `26.825.51511` | `7377` | `f56ac8d5254a10fc4a04e7417fa787d135c3bbca49bad7d668d4ae65833d40c7` | `build_7377` |
 
 ## Structural validation
 

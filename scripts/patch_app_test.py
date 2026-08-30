@@ -64,6 +64,17 @@ class PatchAppSigningTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "peer-authorizer team references"):
                 patch_app.patch_native_peer_authorizer(app, "WYMJ4KK3T2")
 
+    def test_requires_native_peer_authorizer_for_current_builds(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            app = Path(temporary) / "ChatGPT.app"
+
+            with self.assertRaisesRegex(RuntimeError, "peer-authorizer addon"):
+                patch_app.patch_native_peer_authorizer(
+                    app,
+                    "WYMJ4KK3T2",
+                    required=True,
+                )
+
     def test_verifies_recorded_source_provenance(self) -> None:
         source = Path("/Applications/ChatGPT.app")
         with mock.patch.object(patch_app, "verify_source_provenance") as verify:
@@ -139,6 +150,53 @@ class PatchAppSigningTests(unittest.TestCase):
                 real_codex,
                 "Apple Development: Test",
                 "codex",
+            )
+
+    def test_verifies_signed_native_peer_authorizer(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            app = Path(temporary) / "ChatGPT.app"
+            real_codex = app / "Contents" / "Resources" / "codex.real"
+            addon = (
+                app
+                / "Contents"
+                / "Resources"
+                / "native"
+                / "browser-use-peer-authorization.node"
+            )
+            real_codex.parent.mkdir(parents=True)
+            real_codex.write_bytes(b"test executable")
+            addon.parent.mkdir(parents=True)
+            addon.write_bytes(b"test addon")
+
+            with (
+                mock.patch.object(
+                    patch_app,
+                    "capture_computer_use_entitlements",
+                    return_value={},
+                ),
+                mock.patch.object(patch_app, "patch_computer_use_identity"),
+                mock.patch.object(patch_app, "sign_computer_use_code"),
+                mock.patch.object(
+                    patch_app,
+                    "patch_native_peer_authorizer",
+                    return_value=addon,
+                ),
+                mock.patch.object(patch_app, "sign_runtime_executable"),
+                mock.patch.object(patch_app, "verify_signed_code") as verify,
+                mock.patch.object(patch_app, "run"),
+            ):
+                patch_app.sign_independent_app(
+                    app,
+                    "Apple Development: Test",
+                    "TESTTEAM01",
+                    99,
+                    require_peer_authorizer=True,
+                )
+
+            verify.assert_called_once_with(
+                addon,
+                "browser_use_peer_authorization.node",
+                "TESTTEAM01",
             )
 
 

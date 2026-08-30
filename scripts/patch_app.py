@@ -605,6 +605,37 @@ def patch_asar_computer_use_identity(
     )
 
 
+def patch_native_peer_authorizer(
+    app: Path,
+    team_identifier: str | None,
+) -> Path | None:
+    """Trust the team used to re-sign Codex app-tools pipe clients."""
+    addon = (
+        app
+        / "Contents"
+        / "Resources"
+        / "native"
+        / "browser-use-peer-authorization.node"
+    )
+    if not addon.is_file() or team_identifier is None:
+        return None
+    original = OPENAI_DISTRIBUTION_TEAM_IDENTIFIER.encode("ascii")
+    replacement = team_identifier.encode("ascii")
+    if len(replacement) != len(original):
+        raise RuntimeError("the signing team identifier must contain 10 ASCII bytes")
+    data = addon.read_bytes()
+    references = data.count(original)
+    if references != 8:
+        raise RuntimeError(
+            "expected 8 native peer-authorizer team references, "
+            f"found {references}"
+        )
+    # The first reference is the runtime allowlist. The remaining references
+    # belong to the old signature and disappear when the addon is re-signed.
+    addon.write_bytes(data.replace(original, replacement, 1))
+    return addon
+
+
 def sign_native_code_tree(root: Path, identity: str) -> None:
     """Sign native modules before ASAR records their final sizes."""
     if not root.is_dir():
@@ -840,6 +871,13 @@ def sign_independent_app(
         expected_cua_identifier_replacements,
     )
     sign_computer_use_code(app, identity, computer_use_entitlements)
+    peer_authorizer = patch_native_peer_authorizer(app, team_identifier)
+    if peer_authorizer is not None:
+        sign_runtime_executable(
+            peer_authorizer,
+            identity,
+            "browser_use_peer_authorization.node",
+        )
     real_codex = app / "Contents" / "Resources" / "codex.real"
     if not real_codex.is_file():
         raise RuntimeError("the original Codex app-server binary is missing")

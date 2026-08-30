@@ -192,6 +192,14 @@ class PatchAppCompatibilityTests(unittest.TestCase):
             "latest",
         )
 
+    def test_detects_build_7377_renderer_layout_without_using_build_number(self) -> None:
+        bundle = "function adi(){} function sdi(){} function swo(e){}"
+
+        self.assertEqual(
+            patch_app.detect_renderer_profile(bundle, direct_rpc_renderer=True),
+            "build_7377",
+        )
+
     def test_rejects_an_unknown_renderer_layout(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "supported renderer layout"):
             patch_app.detect_renderer_profile(
@@ -280,6 +288,20 @@ class PatchAppCompatibilityTests(unittest.TestCase):
         self.assertEqual(
             adapted,
             "d7 Bsc Pql ys VR mI g0 bI Hja ct",
+        )
+
+    def test_adapts_account_menu_symbols_for_build_7377(self) -> None:
+        component = "e7 QLs kXc Lo Q BW _H CH lt"
+
+        adapted = patch_app.adapt_account_menu_component(
+            component,
+            direct_rpc_renderer=True,
+            renderer_profile="build_7377",
+        )
+
+        self.assertEqual(
+            adapted,
+            "u8 swo Lwc k_ $ QL lz hz xx",
         )
 
 

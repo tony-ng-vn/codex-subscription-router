@@ -23,13 +23,23 @@ class PatchAppSigningTests(unittest.TestCase):
             )
             addon.parent.mkdir(parents=True)
             original = patch_app.OPENAI_DISTRIBUTION_TEAM_IDENTIFIER.encode("ascii")
-            addon.write_bytes(b"code:" + original + b";signature:" + original * 7)
+            compiled = patch_app.arm64_peer_authorizer_team(
+                patch_app.OPENAI_DISTRIBUTION_TEAM_IDENTIFIER
+            )
+            addon.write_bytes(
+                b"code:" + compiled + b";metadata:" + original * 8
+            )
 
             patched = patch_app.patch_native_peer_authorizer(app, "WYMJ4KK3T2")
 
             self.assertEqual(patched, addon)
             result = addon.read_bytes()
-            self.assertIn(b"code:WYMJ4KK3T2", result)
+            self.assertIn(
+                b"code:" + patch_app.arm64_peer_authorizer_team("WYMJ4KK3T2"),
+                result,
+            )
+            self.assertNotIn(compiled, result)
+            self.assertEqual(result.count(b"WYMJ4KK3T2"), 1)
             self.assertEqual(result.count(original), 7)
 
     def test_rejects_changed_native_peer_authorizer_layout(self) -> None:
@@ -44,7 +54,12 @@ class PatchAppSigningTests(unittest.TestCase):
             )
             addon.parent.mkdir(parents=True)
             original = patch_app.OPENAI_DISTRIBUTION_TEAM_IDENTIFIER.encode("ascii")
-            addon.write_bytes(original * 2)
+            addon.write_bytes(
+                patch_app.arm64_peer_authorizer_team(
+                    patch_app.OPENAI_DISTRIBUTION_TEAM_IDENTIFIER
+                )
+                + original * 2
+            )
 
             with self.assertRaisesRegex(RuntimeError, "peer-authorizer team references"):
                 patch_app.patch_native_peer_authorizer(app, "WYMJ4KK3T2")

@@ -62,6 +62,10 @@ TESTED_SOURCE_BUILDS = {
         "26.818.41509",
         "6962",
     ): "8eb91bd9efbf9a4dd04b9b0afdbfcb4e0bab5da18c1919ad74ca327c00c7e791",
+    (
+        "26.825.51511",
+        "7377",
+    ): "f56ac8d5254a10fc4a04e7417fa787d135c3bbca49bad7d668d4ae65833d40c7",
 }
 SOURCE_ANCHOR_COUNTS = {
     "d5a44ed9e2f1db5f81dbbe85408aed256f3203c5b16f00817bb9d7cd941343cf": (
@@ -80,9 +84,14 @@ SOURCE_ANCHOR_COUNTS = {
         99,
         16,
     ),
+    "f56ac8d5254a10fc4a04e7417fa787d135c3bbca49bad7d668d4ae65833d40c7": (
+        49,
+        16,
+    ),
 }
 SUPPORTED_CUA_IDENTIFIER_COUNTS = frozenset({49, 99})
 SUPPORTED_ASAR_CUA_COUNTS = frozenset({16, 17, 20})
+NATIVE_PEER_AUTHORIZER_MIN_BUILD = 7377
 
 
 def parse_args() -> argparse.Namespace:
@@ -438,6 +447,31 @@ def arm64_swift_small_string(value: str) -> bytes:
     )
 
 
+def arm64_peer_authorizer_team(value: str) -> bytes:
+    """Encode the build 7377 instructions that materialize its trusted team."""
+    encoded = value.encode("ascii")
+    if len(encoded) != 10:
+        raise ValueError("a signing team identifier must contain 10 ASCII bytes")
+
+    def instruction(base: int, immediate: int, register: int, shift: int = 0) -> bytes:
+        word = base | ((shift // 16) << 21) | (immediate << 5) | register
+        return word.to_bytes(4, "little")
+
+    chunks = [
+        int.from_bytes(encoded[index : index + 2], "little")
+        for index in range(0, len(encoded), 2)
+    ]
+    return b"".join(
+        (
+            instruction(0xD2800000, chunks[0], 13),
+            instruction(0xF2800000, chunks[1], 13, 16),
+            instruction(0xF2800000, chunks[2], 13, 32),
+            instruction(0xF2800000, chunks[3], 13, 48),
+            instruction(0x52800000, chunks[4], 14),
+        )
+    )
+
+
 def replace_same_length_identifier(
     path: Path, original: str, replacement: str
 ) -> int:
@@ -595,6 +629,54 @@ def patch_asar_computer_use_identity(
         expected=expected_replacements,
         supported=SUPPORTED_ASAR_CUA_COUNTS,
     )
+
+
+def patch_native_peer_authorizer(
+    app: Path,
+    team_identifier: str | None,
+    *,
+    required: bool = False,
+) -> Path | None:
+    """Trust the team used to re-sign Codex app-tools pipe clients."""
+    addon = (
+        app
+        / "Contents"
+        / "Resources"
+        / "native"
+        / "browser-use-peer-authorization.node"
+    )
+    if team_identifier is None:
+        return None
+    if not addon.is_file():
+        if required:
+            raise RuntimeError("required native peer-authorizer addon was not found")
+        return None
+    original = OPENAI_DISTRIBUTION_TEAM_IDENTIFIER.encode("ascii")
+    replacement = team_identifier.encode("ascii")
+    if len(replacement) != len(original):
+        raise RuntimeError("the signing team identifier must contain 10 ASCII bytes")
+    data = addon.read_bytes()
+    references = data.count(original)
+    if references != 8:
+        raise RuntimeError(
+            "expected 8 native peer-authorizer team references, "
+            f"found {references}"
+        )
+    compiled_original = arm64_peer_authorizer_team(
+        OPENAI_DISTRIBUTION_TEAM_IDENTIFIER
+    )
+    compiled_replacement = arm64_peer_authorizer_team(team_identifier)
+    compiled_references = data.count(compiled_original)
+    if compiled_references != 1:
+        raise RuntimeError(
+            "expected 1 compiled native peer-authorizer team reference, "
+            f"found {compiled_references}"
+        )
+    data = data.replace(compiled_original, compiled_replacement, 1)
+    # Keep the diagnostic team string aligned too. The other seven copies are
+    # part of the old signature and disappear when codesign replaces it.
+    addon.write_bytes(data.replace(original, replacement, 1))
+    return addon
 
 
 def sign_native_code_tree(root: Path, identity: str) -> None:
@@ -823,6 +905,8 @@ def sign_independent_app(
     identity: str,
     team_identifier: str | None,
     expected_cua_identifier_replacements: int | None,
+    *,
+    require_peer_authorizer: bool = False,
 ) -> None:
     """Apply one stable identity throughout the modified Electron bundle."""
     computer_use_entitlements = capture_computer_use_entitlements(app)
@@ -832,6 +916,22 @@ def sign_independent_app(
         expected_cua_identifier_replacements,
     )
     sign_computer_use_code(app, identity, computer_use_entitlements)
+    peer_authorizer = patch_native_peer_authorizer(
+        app,
+        team_identifier,
+        required=require_peer_authorizer,
+    )
+    if peer_authorizer is not None:
+        sign_runtime_executable(
+            peer_authorizer,
+            identity,
+            "browser_use_peer_authorization.node",
+        )
+        verify_signed_code(
+            peer_authorizer,
+            "browser_use_peer_authorization.node",
+            team_identifier,
+        )
     real_codex = app / "Contents" / "Resources" / "codex.real"
     if not real_codex.is_file():
         raise RuntimeError("the original Codex app-server binary is missing")
@@ -965,6 +1065,7 @@ def detect_renderer_profile(bundle: str, *, direct_rpc_renderer: bool) -> str:
         "direct": ("function A_a(){", "function M_a(){", "function kxc(e){"),
         "current": ("function eSa(){", "function nSa(){", "function zFc(e){"),
         "latest": ("function TCa(){", "function DCa(){", "function Bsc(e){"),
+        "build_7377": ("function adi(){", "function sdi(){", "function swo(e){"),
     }
     matches = [
         name
@@ -1023,6 +1124,17 @@ def adapt_account_menu_component(
             "CH": "bI",
             "jLa": "Hja",
             "lt": "ct",
+        },
+        "build_7377": {
+            "e7": "u8",
+            "QLs": "swo",
+            "kXc": "Lwc",
+            "Lo": "k_",
+            "Q": "$",
+            "BW": "QL",
+            "_H": "lz",
+            "CH": "hz",
+            "lt": "xx",
         },
     }
     component_symbols = symbol_maps.get(renderer_profile)
@@ -1130,6 +1242,7 @@ def patch_renderer(extracted: Path, token: str) -> None:
         bundle = patch_app_server_request_bridge(bundle)
     current_rpc_renderer = renderer_profile == "current"
     latest_rpc_renderer = renderer_profile == "latest"
+    build_7377_renderer = renderer_profile == "build_7377"
 
     profile_query_pattern = re.compile(
         r"let (?P<result>[A-Za-z_$][\w$]*)=await "
@@ -1147,12 +1260,16 @@ def patch_renderer(extracted: Path, token: str) -> None:
         raise RuntimeError("could not find the native profile stats request")
 
     native_usage_modal_name = (
-        "Bsc"
-        if latest_rpc_renderer
+        "swo"
+        if build_7377_renderer
         else (
-            "zFc"
-            if current_rpc_renderer
-            else ("kxc" if direct_rpc_renderer else "QLs")
+            "Bsc"
+            if latest_rpc_renderer
+            else (
+                "zFc"
+                if current_rpc_renderer
+                else ("kxc" if direct_rpc_renderer else "QLs")
+            )
         )
     )
     native_usage_modal_anchor = f"function {native_usage_modal_name}(e){{"
@@ -1178,11 +1295,20 @@ def patch_renderer(extracted: Path, token: str) -> None:
         "refetchInterval:jp.ONE_MINUTE,staleTime:jp.FIVE_SECONDS},e[0]=t):"
         "t=e[0],It(t)}"
     )
+    build_7377_reset_query_anchor = (
+        "function adi(){let e=(0,pR.c)(1),t;return "
+        "e[0]===Symbol.for(`react.memo_cache_sentinel`)?"
+        "(t={queryKey:[`rate-limit-reset-credits`],queryFn:odi,"
+        "refetchInterval:yx.ONE_MINUTE,staleTime:yx.FIVE_SECONDS},e[0]=t):"
+        "t=e[0],wx(t)}"
+    )
     reset_query_anchor = (
-        latest_reset_query_anchor
-        if latest_rpc_renderer
+        build_7377_reset_query_anchor
+        if build_7377_renderer
         else current_reset_query_anchor
         if current_rpc_renderer
+        else latest_reset_query_anchor
+        if latest_rpc_renderer
         else (
             "function A_a(){let e=(0,fH.c)(1),t;return "
             "e[0]===Symbol.for(`react.memo_cache_sentinel`)?"
@@ -1201,7 +1327,12 @@ def patch_renderer(extracted: Path, token: str) -> None:
     if bundle.count(reset_query_anchor) != 1:
         raise RuntimeError("could not find the native reset-credit query")
     reset_query_replacement = (
-        "function TCa(){let e=window.__codexMuxResetAccountId;return It({"
+        "function adi(){let e=window.__codexMuxResetAccountId;return wx({"
+        "queryKey:[`rate-limit-reset-credits`,e??`primary`],"
+        "queryFn:e?()=>codexMuxRateLimitResets(e):odi,"
+        "refetchInterval:yx.ONE_MINUTE,staleTime:yx.FIVE_SECONDS})}"
+        if build_7377_renderer
+        else "function TCa(){let e=window.__codexMuxResetAccountId;return It({"
         "queryKey:[`rate-limit-reset-credits`,e??`primary`],"
         "queryFn:e?()=>codexMuxRateLimitResets(e):ECa,"
         "refetchInterval:jp.ONE_MINUTE,staleTime:jp.FIVE_SECONDS})}"
@@ -1227,7 +1358,15 @@ def patch_renderer(extracted: Path, token: str) -> None:
     bundle = bundle.replace(reset_query_anchor, reset_query_replacement, 1)
 
     reset_mutation_anchor = (
-        "function DCa(){let e=(0,MV.c)(3),t=ct(),n=vb(),r;return "
+        "function sdi(){let e=(0,pR.c)(3),t=xx(),n=yD(),r;return "
+        "e[0]!==n||e[1]!==t?(r={mutationFn:cdi,onSuccess:(e,r)=>{"
+        "let{creditId:i}=r,a=e.code;if(a===`reset`||a===`already_redeemed`){"
+        "let n=e.code===`reset`?e.credit?.id??i:i;"
+        "t.setQueryData([`rate-limit-reset-credits`],e=>jui(e,a,n))}"
+        "Promise.all([n([`rate-limit-status`]),n([`rate-limit-reset-credits`])])}},"
+        "e[0]=n,e[1]=t,e[2]=r):r=e[2],Ex(r)}"
+        if build_7377_renderer
+        else "function DCa(){let e=(0,MV.c)(3),t=ct(),n=vb(),r;return "
         "e[0]!==n||e[1]!==t?(r={mutationFn:OCa,onSuccess:(e,r)=>{"
         "let{creditId:i}=r,a=e.code;if(a===`reset`||a===`already_redeemed`){"
         "let n=e.code===`reset`?e.credit?.id??i:i;"
@@ -1266,7 +1405,15 @@ def patch_renderer(extracted: Path, token: str) -> None:
     if bundle.count(reset_mutation_anchor) != 1:
         raise RuntimeError("could not find the native reset-credit mutation")
     reset_mutation_replacement = (
-        "function DCa(){let e=ct(),t=vb(),n=window.__codexMuxResetAccountId,"
+        "function sdi(){let e=xx(),t=yD(),n=window.__codexMuxResetAccountId,"
+        "r=[`rate-limit-reset-credits`,n??`primary`];return Ex({"
+        "mutationFn:n?i=>codexMuxConsumeRateLimitReset(n,i):cdi,"
+        "onSuccess:(n,i)=>{let{creditId:a}=i,o=n.code;"
+        "if(o===`reset`||o===`already_redeemed`){let t=o===`reset`?"
+        "n.credit?.id??a:a;e.setQueryData(r,e=>jui(e,o,t))}"
+        "Promise.all([t([`rate-limit-status`]),t(r)])}})}"
+        if build_7377_renderer
+        else "function DCa(){let e=ct(),t=vb(),n=window.__codexMuxResetAccountId,"
         "r=[`rate-limit-reset-credits`,n??`primary`];return Qt({"
         "mutationFn:n?i=>codexMuxConsumeRateLimitReset(n,i):OCa,"
         "onSuccess:(n,i)=>{let{creditId:a}=i,o=n.code;"
@@ -1314,6 +1461,9 @@ def patch_renderer(extracted: Path, token: str) -> None:
 
     usage_header_anchor = (
         "let _e;t[46]===he?_e=t[47]:"
+        "(_e=(0,wQ.jsxs)(ER,{children:[he,ge]}),t[46]=he,t[47]=_e);"
+        if build_7377_renderer
+        else "let _e;t[46]===he?_e=t[47]:"
         "(_e=(0,u0.jsxs)(IR,{children:[he,ge]}),t[46]=he,t[47]=_e);"
         if latest_rpc_renderer
         else "let _e;t[46]===he?_e=t[47]:"
@@ -1331,7 +1481,10 @@ def patch_renderer(extracted: Path, token: str) -> None:
     if bundle.count(usage_header_anchor) != 1:
         raise RuntimeError("could not find the native Usage sheet header")
     usage_header_replacement = (
-        "let _e=(0,u0.jsxs)(IR,{children:[he,ge,"
+        "let _e=(0,wQ.jsxs)(ER,{children:[he,ge,"
+        "window.__codexMuxResetAccountSelector??null]});"
+        if build_7377_renderer
+        else "let _e=(0,u0.jsxs)(IR,{children:[he,ge,"
         "window.__codexMuxResetAccountSelector??null]});"
         if latest_rpc_renderer
         else "let _e=(0,d4.jsxs)(RR,{children:[he,ge,"
@@ -1354,7 +1507,9 @@ def patch_renderer(extracted: Path, token: str) -> None:
     bundle = bundle.replace(
         usage_anchor,
         (
-            "usageItems:(0,d7.jsx)(CodexMuxAccountMenu,{})"
+            "usageItems:(0,u8.jsx)(CodexMuxAccountMenu,{})"
+            if build_7377_renderer
+            else "usageItems:(0,d7.jsx)(CodexMuxAccountMenu,{})"
             if direct_rpc_renderer
             else "usageItems:(0,e7.jsx)(CodexMuxAccountMenu,{})"
         ),
@@ -1363,6 +1518,11 @@ def patch_renderer(extracted: Path, token: str) -> None:
 
     open_change_anchors = (
         (
+            "triggerButton:Dt,onOpenChange:c,children:[N,null]",
+            "open:s,onOpenChange:c,contentWidth:`panel`,triggerButton:Dt,children:Rt",
+        )
+        if build_7377_renderer
+        else (
             "triggerButton:Dt,onOpenChange:l,children:P",
             "open:s,onOpenChange:l,contentWidth:`panel`,triggerButton:Dt,children:Rt",
         )
@@ -1372,7 +1532,9 @@ def patch_renderer(extracted: Path, token: str) -> None:
             "return(0,e7.jsx)(vH,{open:a,onOpenChange:o,contentWidth:`panel`",
         )
     )
-    open_change_handler = "l" if direct_rpc_renderer else "o"
+    open_change_handler = (
+        "c" if build_7377_renderer else "l" if direct_rpc_renderer else "o"
+    )
     for anchor in open_change_anchors:
         if bundle.count(anchor) != 1:
             raise RuntimeError("could not find a native profile menu open-state hook")
@@ -1410,7 +1572,9 @@ def patch_renderer(extracted: Path, token: str) -> None:
     profile_bundle = profile_bundle_path.read_text(encoding="utf-8")
     if direct_rpc_renderer:
         profile_avatar_anchor = (
-            '"aria-busy":Kt,className:`flex flex-col items-center`,children:Jt'
+            '"aria-busy":ht,className:`flex flex-col items-center`,children:vt'
+            if build_7377_renderer
+            else '"aria-busy":Kt,className:`flex flex-col items-center`,children:Jt'
             if latest_rpc_renderer
             else '"aria-busy":Ut,className:`flex flex-col items-center`,children:Wt'
             if current_rpc_renderer
@@ -1419,7 +1583,12 @@ def patch_renderer(extracted: Path, token: str) -> None:
         if profile_bundle.count(profile_avatar_anchor) != 1:
             raise RuntimeError("could not find the native Profile avatar")
         profile_avatar_replacement = (
-            '"aria-busy":Kt,className:`flex flex-col items-center`,children:'
+            '"aria-busy":ht,className:`flex flex-col items-center`,children:'
+            "globalThis.__codexMuxSelectedProfileAccountId?vt:"
+            "(globalThis.CodexMuxProfileAvatarStack?.("
+            "{onSelect:()=>F.refetch()})??vt)"
+            if build_7377_renderer
+            else '"aria-busy":Kt,className:`flex flex-col items-center`,children:'
             "globalThis.__codexMuxSelectedProfileAccountId?Jt:"
             "(globalThis.CodexMuxProfileAvatarStack?.("
             "{onSelect:()=>M.refetch()})??Jt)"
@@ -1503,12 +1672,14 @@ def patch_renderer(extracted: Path, token: str) -> None:
     legacy_thread_component_anchor = "function bE(){let e=(0,wE.c)(57)"
     direct_thread_component_anchor = "function xE(e){let t=(0,wE.c)(32)"
     current_thread_component_anchor = "function VT(e){let t=(0,WT.c)(33)"
+    build_7377_thread_component_anchor = "function oE(e){let t=(0,lE.c)(34)"
     thread_bundles = [
         path
         for path in (webview / "assets").glob("local-conversation-thread-*.js")
         if legacy_thread_component_anchor in path.read_text(encoding="utf-8")
         or direct_thread_component_anchor in path.read_text(encoding="utf-8")
         or current_thread_component_anchor in path.read_text(encoding="utf-8")
+        or build_7377_thread_component_anchor in path.read_text(encoding="utf-8")
     ]
     if len(thread_bundles) != 1:
         raise RuntimeError(
@@ -1524,7 +1695,15 @@ def patch_renderer(extracted: Path, token: str) -> None:
         "__CODEX_MUX_CONTROL_PORT__", str(CONTROL_PORT)
     )
     thread_component = thread_component.replace("__CODEX_MUX_CONTROL_TOKEN__", token)
-    if latest_rpc_renderer:
+    if build_7377_renderer:
+        thread_component_symbols = {
+            "TE": "XT",
+            "zE": "uE",
+            "$n": "oa",
+            "sr": "Ca",
+            "K": "Z",
+        }
+    elif latest_rpc_renderer:
         thread_component_symbols = {
             "TE": "jT",
             "zE": "GT",
@@ -1556,7 +1735,9 @@ def patch_renderer(extracted: Path, token: str) -> None:
                 thread_component,
             )
     thread_component_anchor = (
-        current_thread_component_anchor
+        build_7377_thread_component_anchor
+        if build_7377_renderer
+        else current_thread_component_anchor
         if latest_rpc_renderer or current_rpc_renderer
         else (
             direct_thread_component_anchor
@@ -1572,7 +1753,9 @@ def patch_renderer(extracted: Path, token: str) -> None:
         1,
     )
     summary_children_anchor = (
-        "children:[l,u,d,f,p,m,h,g,_,v,y,b,x,S,C]"
+        "children:[l,u,d,f,p,m,h,_,v,g,y,b,x,S,C,w]"
+        if build_7377_renderer
+        else "children:[l,u,d,f,p,m,h,g,_,v,y,b,x,S,C]"
         if latest_rpc_renderer or current_rpc_renderer
         else (
             "children:[l,u,d,f,p,m,h,g,_,v,y,b,x,S]"
@@ -1585,7 +1768,10 @@ def patch_renderer(extracted: Path, token: str) -> None:
     thread_bundle = thread_bundle.replace(
         summary_children_anchor,
         (
-            "children:[l,u,d,f,(0,GT.jsx)(CodexMuxThreadSubscription,{}),"
+            "children:[l,u,d,f,(0,uE.jsx)(CodexMuxThreadSubscription,{}),"
+            "p,m,h,_,v,g,y,b,x,S,C,w]"
+            if build_7377_renderer
+            else "children:[l,u,d,f,(0,GT.jsx)(CodexMuxThreadSubscription,{}),"
             "p,m,h,g,_,v,y,b,x,S,C]"
             if latest_rpc_renderer or current_rpc_renderer
             else (
@@ -1921,6 +2107,11 @@ def patch_app(
             signing_identity,
             team_identifier,
             expected_cua_identifier_replacements,
+            require_peer_authorizer=(
+                team_identifier is not None
+                and source_build.isdigit()
+                and int(source_build) >= NATIVE_PEER_AUTHORIZER_MIN_BUILD
+            ),
         )
         verify_signed_code(
             staged_app,

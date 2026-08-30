@@ -1,7 +1,7 @@
 {
   "name": "codex-subscription-router-patcher",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Build tooling for managed and independent Codex Subscription Router macOS app patches",
   "license": "MIT",
   "repository": {
@@ -20,7 +20,7 @@
     "check:go": "go test ./... && go vet ./...",
     "check:js": "node --check ui/account-menu.js && node --check ui/thread-subscription.js && node --check ui/ui-test-bridge.cjs",
     "check:test": "node --test test/*.test.cjs",
-    "check:python": "python3 -m py_compile scripts/patch_app.py scripts/patch_app_test.py scripts/check_release.py && python3 -m unittest scripts.patch_app_test",
+    "check:python": "python3 -m py_compile scripts/patch_app.py scripts/patch_app_test.py scripts/update_managed.py scripts/update_managed_test.py scripts/check_release.py scripts/check_release_test.py && python3 -m unittest scripts.patch_app_test scripts.update_managed_test scripts.check_release_test",
     "check:shell": "bash -n install.sh",
     "release:check": "python3 scripts/check_release.py"
   },

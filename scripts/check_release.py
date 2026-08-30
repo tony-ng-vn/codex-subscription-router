@@ -33,6 +33,9 @@ REQUIRED_FILES = (
     "package-lock.json",
     "package.json",
     "scripts/patch_app_test.py",
+    "scripts/check_release_test.py",
+    "scripts/update_managed.py",
+    "scripts/update_managed_test.py",
 )
 CURATED_SCREENSHOTS = (
     "screenshots/account-menu.png",
@@ -65,6 +68,10 @@ def fail(message: str) -> None:
     raise SystemExit(1)
 
 
+def evidence_is_complete(evidence: str) -> bool:
+    return "Release status: complete." in evidence.splitlines()
+
+
 def main() -> int:
     for relative in REQUIRED_FILES:
         if not (ROOT / relative).is_file():
@@ -76,6 +83,9 @@ def main() -> int:
     evidence_path = ROOT / "docs" / f"E2E-REPORT-{version}.md"
     if not evidence_path.is_file():
         fail(f"missing current-version E2E evidence: {evidence_path.relative_to(ROOT)}")
+    evidence = evidence_path.read_text(encoding="utf-8")
+    if not evidence_is_complete(evidence):
+        fail(f"current-version E2E evidence is incomplete: {evidence_path.relative_to(ROOT)}")
 
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     lock = json.loads((ROOT / "package-lock.json").read_text(encoding="utf-8"))

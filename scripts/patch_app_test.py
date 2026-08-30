@@ -11,6 +11,70 @@ from scripts import patch_app
 
 
 class PatchAppSigningTests(unittest.TestCase):
+    def test_retargets_native_peer_authorizer_to_router_team(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            app = Path(temporary) / "ChatGPT.app"
+            addon = (
+                app
+                / "Contents"
+                / "Resources"
+                / "native"
+                / "browser-use-peer-authorization.node"
+            )
+            addon.parent.mkdir(parents=True)
+            original = patch_app.OPENAI_DISTRIBUTION_TEAM_IDENTIFIER.encode("ascii")
+            compiled = patch_app.arm64_peer_authorizer_team(
+                patch_app.OPENAI_DISTRIBUTION_TEAM_IDENTIFIER
+            )
+            addon.write_bytes(
+                b"code:" + compiled + b";metadata:" + original * 8
+            )
+
+            patched = patch_app.patch_native_peer_authorizer(app, "WYMJ4KK3T2")
+
+            self.assertEqual(patched, addon)
+            result = addon.read_bytes()
+            self.assertIn(
+                b"code:" + patch_app.arm64_peer_authorizer_team("WYMJ4KK3T2"),
+                result,
+            )
+            self.assertNotIn(compiled, result)
+            self.assertEqual(result.count(b"WYMJ4KK3T2"), 1)
+            self.assertEqual(result.count(original), 7)
+
+    def test_rejects_changed_native_peer_authorizer_layout(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            app = Path(temporary) / "ChatGPT.app"
+            addon = (
+                app
+                / "Contents"
+                / "Resources"
+                / "native"
+                / "browser-use-peer-authorization.node"
+            )
+            addon.parent.mkdir(parents=True)
+            original = patch_app.OPENAI_DISTRIBUTION_TEAM_IDENTIFIER.encode("ascii")
+            addon.write_bytes(
+                patch_app.arm64_peer_authorizer_team(
+                    patch_app.OPENAI_DISTRIBUTION_TEAM_IDENTIFIER
+                )
+                + original * 2
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "peer-authorizer team references"):
+                patch_app.patch_native_peer_authorizer(app, "WYMJ4KK3T2")
+
+    def test_requires_native_peer_authorizer_for_current_builds(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            app = Path(temporary) / "ChatGPT.app"
+
+            with self.assertRaisesRegex(RuntimeError, "peer-authorizer addon"):
+                patch_app.patch_native_peer_authorizer(
+                    app,
+                    "WYMJ4KK3T2",
+                    required=True,
+                )
+
     def test_verifies_recorded_source_provenance(self) -> None:
         source = Path("/Applications/ChatGPT.app")
         with mock.patch.object(patch_app, "verify_source_provenance") as verify:
@@ -88,6 +152,53 @@ class PatchAppSigningTests(unittest.TestCase):
                 "codex",
             )
 
+    def test_verifies_signed_native_peer_authorizer(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            app = Path(temporary) / "ChatGPT.app"
+            real_codex = app / "Contents" / "Resources" / "codex.real"
+            addon = (
+                app
+                / "Contents"
+                / "Resources"
+                / "native"
+                / "browser-use-peer-authorization.node"
+            )
+            real_codex.parent.mkdir(parents=True)
+            real_codex.write_bytes(b"test executable")
+            addon.parent.mkdir(parents=True)
+            addon.write_bytes(b"test addon")
+
+            with (
+                mock.patch.object(
+                    patch_app,
+                    "capture_computer_use_entitlements",
+                    return_value={},
+                ),
+                mock.patch.object(patch_app, "patch_computer_use_identity"),
+                mock.patch.object(patch_app, "sign_computer_use_code"),
+                mock.patch.object(
+                    patch_app,
+                    "patch_native_peer_authorizer",
+                    return_value=addon,
+                ),
+                mock.patch.object(patch_app, "sign_runtime_executable"),
+                mock.patch.object(patch_app, "verify_signed_code") as verify,
+                mock.patch.object(patch_app, "run"),
+            ):
+                patch_app.sign_independent_app(
+                    app,
+                    "Apple Development: Test",
+                    "TESTTEAM01",
+                    99,
+                    require_peer_authorizer=True,
+                )
+
+            verify.assert_called_once_with(
+                addon,
+                "browser_use_peer_authorization.node",
+                "TESTTEAM01",
+            )
+
 
 class PatchAppComputerUseCacheTests(unittest.TestCase):
     def test_retires_official_cache_for_managed_primary(self) -> None:
@@ -146,6 +257,15 @@ class PatchAppControlTokenTests(unittest.TestCase):
 
 
 class PatchAppCompatibilityTests(unittest.TestCase):
+    def test_supports_chatgpt_build_7377(self) -> None:
+        source = ("26.825.51511", "7377")
+        expected_hash = (
+            "f56ac8d5254a10fc4a04e7417fa787d135c3bbca49bad7d668d4ae65833d40c7"
+        )
+
+        self.assertEqual(patch_app.TESTED_SOURCE_BUILDS[source], expected_hash)
+        self.assertEqual(patch_app.SOURCE_ANCHOR_COUNTS[expected_hash], (49, 16))
+
     def test_supports_chatgpt_build_6962(self) -> None:
         source = ("26.818.41509", "6962")
         expected_hash = (
@@ -190,6 +310,14 @@ class PatchAppCompatibilityTests(unittest.TestCase):
         self.assertEqual(
             patch_app.detect_renderer_profile(bundle, direct_rpc_renderer=True),
             "latest",
+        )
+
+    def test_detects_build_7377_renderer_layout_without_using_build_number(self) -> None:
+        bundle = "function adi(){} function sdi(){} function swo(e){}"
+
+        self.assertEqual(
+            patch_app.detect_renderer_profile(bundle, direct_rpc_renderer=True),
+            "build_7377",
         )
 
     def test_rejects_an_unknown_renderer_layout(self) -> None:
@@ -280,6 +408,20 @@ class PatchAppCompatibilityTests(unittest.TestCase):
         self.assertEqual(
             adapted,
             "d7 Bsc Pql ys VR mI g0 bI Hja ct",
+        )
+
+    def test_adapts_account_menu_symbols_for_build_7377(self) -> None:
+        component = "e7 QLs kXc Lo Q BW _H CH lt"
+
+        adapted = patch_app.adapt_account_menu_component(
+            component,
+            direct_rpc_renderer=True,
+            renderer_profile="build_7377",
+        )
+
+        self.assertEqual(
+            adapted,
+            "u8 swo Lwc k_ $ QL lz hz xx",
         )
 
 

@@ -413,7 +413,7 @@ function CodexMuxAccountMenu() {
     (0, e7.jsx)(
       _H,
       {
-        LeftIcon: S2,
+        LeftIcon: CodexMuxUsageIcon,
         SubText: loading
           ? "Connecting subscriptions..."
           : connected.length === 1
@@ -542,7 +542,7 @@ function CodexMuxAccountMenu() {
       (0, e7.jsx)(
         _H,
         {
-          LeftIcon: S2,
+          LeftIcon: CodexMuxUsageIcon,
           SubText: error,
           tone: "danger",
           allowWrap: true,
@@ -693,6 +693,22 @@ function codexMuxUsageWindows(rateLimits) {
     }));
 }
 
+function CodexMuxUsageIcon(props) {
+  return (0, e7.jsx)("svg", {
+    viewBox: "0 0 20 20",
+    fill: "none",
+    "aria-hidden": true,
+    ...props,
+    children: (0, e7.jsx)("path", {
+      d: "M4 14.5a7 7 0 1 1 12 0M10 10l3.25-2.25",
+      stroke: "currentColor",
+      strokeWidth: 1.5,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+    }),
+  });
+}
+
 function CodexMuxPlusIcon(props) {
   return (0, e7.jsx)("svg", {
     viewBox: "0 0 20 20",
@@ -786,7 +802,7 @@ function CodexMuxMaskedEmail({ email }) {
 
 function CodexMuxAccountAvatar({ imageUrl, label, className }) {
   const [failed, setFailed] = kXc.useState(false);
-  const resolvedImageUrl = jLa(imageUrl || null);
+  const resolvedImageUrl = codexMuxProfileImageUrl(imageUrl);
   if (resolvedImageUrl && !failed) {
     return (0, e7.jsx)("img", {
       src: resolvedImageUrl,
@@ -807,6 +823,20 @@ function CodexMuxAccountAvatar({ imageUrl, label, className }) {
     "aria-hidden": true,
     children: initials || "?",
   });
+}
+
+function codexMuxProfileImageUrl(value) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    const trustedHost =
+      host === "chatgpt.com" ||
+      (host.endsWith(".chatgpt.com") && !host.startsWith("ab."));
+    return url.protocol === "https:" && trustedHost ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 function CodexMuxOverlappingAvatars({ accounts, size = "size-20" }) {

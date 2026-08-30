@@ -60,3 +60,9 @@ the same control token. Release workflows never set this variable.
 
 Releases contain source only. Publishing the patched `.app`, the official ASAR,
 or any extracted OpenAI binary is outside this project's release process.
+
+## Managed updates
+
+The managed updater accepts full Apple silicon archives only from OpenAI's HTTPS appcast host and requires the exact appcast path and byte count.
+After extraction, it checks the expected ChatGPT bundle identifier, version, build, official OpenAI Apple signing team, complete code signature, and Gatekeeper assessment.
+The downloaded official app stays in a private temporary directory and is removed after the staged patch completes or fails.

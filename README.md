@@ -48,9 +48,9 @@ Read [Architecture](docs/ARCHITECTURE.md) and [Security model](docs/SECURITY-MOD
 | Component | Supported value |
 | --- | --- |
 | Platform | macOS on Apple silicon |
-| ChatGPT versions | `26.803.61601`, `26.814.41407`, `26.818.31338`, `26.818.41509` |
-| ChatGPT builds | `6396`, `6720`, `6892`, `6962` |
-| Current verified build | `26.818.41509`, build `6962` |
+| ChatGPT versions | `26.803.61601`, `26.814.41407`, `26.818.31338`, `26.818.41509`, `26.825.51511` |
+| ChatGPT builds | `6396`, `6720`, `6892`, `6962`, `7377` |
+| Current verified build | `26.825.51511`, build `7377` |
 | Go | 1.26 or newer |
 | Node.js | 22.12 or newer |
 
@@ -88,15 +88,16 @@ The installer creates:
 ## Install as managed ChatGPT
 
 Managed-primary mode preserves the normal ChatGPT identity and profile while replacing `/Applications/ChatGPT.app` with a signed router build.
-The installer copies the fresh official app into staging first and creates a recoverable backup before replacement.
+The installer creates a recoverable backup before replacement.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/tony-ng-vn/codex-subscription-router/main/install.sh | /bin/bash -s -- --managed-primary
 ```
 
-Start managed-primary installation only from a fresh official ChatGPT app.
-If ChatGPT is already patched, install a fresh official update first.
 The patched app disables its updater because an automatic official update would remove the router changes.
+Run the same command again to update an already patched app.
+The installer downloads the newest full Apple silicon archive from OpenAI's appcast, verifies the byte count, official OpenAI Apple signature, bundle identity, version, build, and Gatekeeper assessment, and then applies the router in staging.
+Account credentials, preferences, and thread ownership remain in `~/.codex-mux` and are not stored in the app bundle.
 
 ## Install from a clone
 
@@ -169,6 +170,7 @@ The signed-app procedure is in [Smoke test](docs/SMOKE-TEST.md).
 ## Known limitations
 
 - A fundamentally new ChatGPT renderer layout still needs a reviewed compatibility profile.
+- Managed updates stop before installation when a new renderer layout has not been reviewed.
 - Generated applications are tied to one macOS user and signing team.
 - The initial merged history fetch is limited to 500 threads per account.
 - Releases are source-only and never include patched OpenAI binaries.

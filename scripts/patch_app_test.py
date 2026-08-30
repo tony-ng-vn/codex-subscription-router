@@ -146,6 +146,15 @@ class PatchAppControlTokenTests(unittest.TestCase):
 
 
 class PatchAppCompatibilityTests(unittest.TestCase):
+    def test_supports_chatgpt_build_7377(self) -> None:
+        source = ("26.825.51511", "7377")
+        expected_hash = (
+            "f56ac8d5254a10fc4a04e7417fa787d135c3bbca49bad7d668d4ae65833d40c7"
+        )
+
+        self.assertEqual(patch_app.TESTED_SOURCE_BUILDS[source], expected_hash)
+        self.assertEqual(patch_app.SOURCE_ANCHOR_COUNTS[expected_hash], (49, 16))
+
     def test_supports_chatgpt_build_6962(self) -> None:
         source = ("26.818.41509", "6962")
         expected_hash = (
